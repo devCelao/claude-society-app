@@ -1,7 +1,7 @@
 # Estado — claude-society-app
 **Projeto:** claude-society-app
 **Iniciado em:** 2026-05-29
-**Ultima atualizacao:** 2026-05-30
+**Ultima atualizacao:** 2026-05-30 (4C.1-4C.4 concluidos)
 **Fase atual:** CONCLUIDO — fundacao entregue (GATE 5 aprovado)
 
 ---
@@ -126,14 +126,15 @@
 
 | # | Etapa | Status |
 |---|-------|--------|
-| 4C.1 | Artefato de arquitetura lido e compreendido | Pendente |
-| 4C.2 | Plano de scripts gerado | Pendente |
-| 4C.3 | **[GATE 4C] Aprovacao humana — plano de scripts database** | Pendente |
-| 4C.4 | Scripts SQL (_up + _down) + execution-order.md criados | Pendente |
-| 4C.5 | **[GATE 4C-EXEC] Humano executa scripts e confirma sucesso** | Pendente |
-| 4C.6 | Handoff para Dev entregue | Pendente |
+| 4C.1 | Artefato de arquitetura lido e compreendido | Concluido |
+| 4C.2 | Plano de scripts gerado | Concluido |
+| 4C.3 | **[GATE 4C] Aprovacao humana — plano de scripts database** | Aprovado |
+| 4C.4 | Scripts SQL (_up + _down) + execution-order.md criados | Concluido |
+| 4C.5 | **[GATE 4C-EXEC] Humano executa scripts e confirma sucesso** | Aprovado |
+| 4C.6 | Handoff para Dev entregue | Concluido |
 
-**Impedimentos ativos:** nenhum — todos os pré-requisitos aprovados. Pertence a outro fluxo.
+**Impedimentos ativos:** nenhum
+**Artefatos criados:** `database/setup/` — 8 scripts DDL + rollback_fundacao.sql + execution-order.md
 
 ---
 
@@ -176,3 +177,5 @@
 | 2026-05-30 | humano | GATE 4A aprovado — plano de fundacao frontend aprovado |
 | 2026-05-30 | agente-implementador-frontend | Fundacao implementada: Next.js 14 + Prisma 7 + shadcn/ui + estrutura completa (4A.3, 4A.4, 4A.5 concluidos). tsc PASS, lint PASS. Desvio: Prisma 7 requer adapter (@prisma/adapter-mariadb) e output em src/generated/prisma/ |
 | 2026-05-30 | humano | GATE 5 aprovado — CLAUDE.md final aprovado. Fundacao concluida. |
+| 2026-05-30 | agente-implementador-database | arquitetura-database.md lida + plano gerado + GATE 4C aprovado (4C.1, 4C.2, 4C.3 concluidos) |
+| 2026-05-30 | agente-implementador-database | 8 scripts _up + 8 scripts _down + execution-order.md criados em database/setup/ (4C.4 concluido) — aguardando execucao humana |
