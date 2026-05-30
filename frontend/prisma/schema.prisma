@@ -1,0 +1,151 @@
+// Prisma schema — claude-society-app
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum StatusDia {
+  PENDENTE
+  EM_ANDAMENTO
+  FINALIZADO
+}
+
+enum StatusPartida {
+  AGUARDANDO
+  EM_ANDAMENTO
+  FINALIZADA
+}
+
+// ─── Models ──────────────────────────────────────────────────────────────────
+
+model Jogador {
+  id         Int       @id @default(autoincrement())
+  nome       String    @db.VarChar(100)
+  apelido    String?   @db.VarChar(50)
+  posicao    String?   @db.VarChar(30)
+  convidado  Boolean   @default(false)
+  deletedAt  DateTime? @map("deleted_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  jogadorTimes JogadorTime[]
+  gols         Gol[]
+  assistencias Assistencia[]
+
+  @@map("jogadores")
+}
+
+model Ciclo {
+  id        Int       @id @default(autoincrement())
+  nome      String    @db.VarChar(100)
+  inicioEm  DateTime  @map("inicio_em")
+  fimEm     DateTime? @map("fim_em")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  diasDeJogo DiaDeJogo[]
+
+  @@map("ciclos")
+}
+
+model DiaDeJogo {
+  id        Int       @id @default(autoincrement())
+  cicloId   Int       @map("ciclo_id")
+  data      DateTime  @db.Date
+  status    StatusDia @default(PENDENTE)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  ciclo    Ciclo     @relation(fields: [cicloId], references: [id])
+  times    Time[]
+  partidas Partida[]
+
+  @@map("dias_de_jogo")
+}
+
+model Time {
+  id          Int      @id @default(autoincrement())
+  diaDeJogoId Int      @map("dia_de_jogo_id")
+  nome        String   @db.VarChar(20)
+  cor         String   @db.VarChar(30)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  diaDeJogo    DiaDeJogo     @relation(fields: [diaDeJogoId], references: [id])
+  jogadorTimes JogadorTime[]
+  golsMarcados Gol[]
+  partidasComoA Partida[]    @relation("TimeA")
+  partidasComoB Partida[]    @relation("TimeB")
+  partidasVencidas Partida[] @relation("Vencedor")
+
+  @@map("times")
+}
+
+model JogadorTime {
+  id        Int      @id @default(autoincrement())
+  timeId    Int      @map("time_id")
+  jogadorId Int      @map("jogador_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  time    Time    @relation(fields: [timeId], references: [id])
+  jogador Jogador @relation(fields: [jogadorId], references: [id])
+
+  @@unique([timeId, jogadorId])
+  @@map("jogador_time")
+}
+
+model Partida {
+  id          Int           @id @default(autoincrement())
+  diaDeJogoId Int           @map("dia_de_jogo_id")
+  timeAId     Int           @map("time_a_id")
+  timeBId     Int           @map("time_b_id")
+  status      StatusPartida @default(AGUARDANDO)
+  inicioEm    DateTime?     @map("inicio_em")
+  fimEm       DateTime?     @map("fim_em")
+  vencedorId  Int?          @map("vencedor_id")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  diaDeJogo DiaDeJogo @relation(fields: [diaDeJogoId], references: [id])
+  timeA     Time      @relation("TimeA", fields: [timeAId], references: [id])
+  timeB     Time      @relation("TimeB", fields: [timeBId], references: [id])
+  vencedor  Time?     @relation("Vencedor", fields: [vencedorId], references: [id])
+  gols      Gol[]
+
+  @@map("partidas")
+}
+
+model Gol {
+  id        Int      @id @default(autoincrement())
+  partidaId Int      @map("partida_id")
+  timeId    Int      @map("time_id")
+  jogadorId Int      @map("jogador_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  partida    Partida      @relation(fields: [partidaId], references: [id])
+  time       Time         @relation(fields: [timeId], references: [id])
+  jogador    Jogador      @relation(fields: [jogadorId], references: [id])
+  assistencia Assistencia?
+
+  @@map("gols")
+}
+
+model Assistencia {
+  id        Int      @id @default(autoincrement())
+  golId     Int      @unique @map("gol_id")
+  jogadorId Int      @map("jogador_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  gol     Gol     @relation(fields: [golId], references: [id], onDelete: Cascade)
+  jogador Jogador @relation(fields: [jogadorId], references: [id])
+
+  @@map("assistencias")
+}

@@ -1,0 +1,12 @@
+import { NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
+
+export async function GET() {
+  try {
+    await prisma.$queryRaw`SELECT 1`
+    return NextResponse.json({ status: 'ok', db: 'ok' })
+  } catch (error) {
+    console.error('[health] DB error:', error)
+    return NextResponse.json({ status: 'ok', db: 'error' }, { status: 200 })
+  }
+}

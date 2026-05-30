@@ -1,0 +1,90 @@
+name: claude-society-app
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Traefik — proxy reverso; unico servico com porta publica
+  # ---------------------------------------------------------------------------
+  traefik:
+    image: traefik:v3
+    container_name: claude-society-app-traefik
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--api.dashboard=false"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - claude_society_net
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # App — monolito Next.js 14
+  # ---------------------------------------------------------------------------
+# app:
+#   build:
+#     context: ./frontend
+#     dockerfile: Dockerfile
+#   container_name: claude-society-app-app
+#   env_file:
+#     - .env
+#   depends_on:
+#     db:
+#       condition: service_healthy
+#   labels:
+#     - "traefik.enable=true"
+#     - "traefik.http.routers.app.rule=Host(`${APP_DOMAIN}`)"
+#     - "traefik.http.routers.app.entrypoints=websecure"
+#     - "traefik.http.services.app.loadbalancer.server.port=3000"
+#   networks:
+#     - claude_society_net
+#   restart: unless-stopped
+#   healthcheck:
+#     test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+#     interval: 30s
+#     timeout: 10s
+#     retries: 3
+#     start_period: 60s
+#
+  # ---------------------------------------------------------------------------
+  # DB — MySQL 8.0
+  # ---------------------------------------------------------------------------
+  db:
+    image: mysql:8.0
+    container_name: claude-society-app-db
+    env_file:
+      - .env
+    volumes:
+      - claude_society_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - claude_society_net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+# -------------------------------------------------------------------------
+# Networks
+# -------------------------------------------------------------------------
+networks:
+  claude_society_net:
+    name: claude_society_net
+    driver: bridge
+
+# -------------------------------------------------------------------------
+# Volumes
+# -------------------------------------------------------------------------
+volumes:
+  claude_society_mysql_data:
