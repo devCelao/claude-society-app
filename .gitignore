@@ -10,9 +10,11 @@ node_modules/
 .next/
 out/
 dist/
+*.tsbuildinfo
 
-# Prisma
+# Prisma — client gerado (nunca commitar)
 prisma/generated/
+**/src/generated/
 
 # Logs
 *.log
@@ -36,4 +38,3 @@ coverage/
 #Claude IA
 .claude
 
-/src/generated/prisma
