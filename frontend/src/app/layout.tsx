@@ -1,12 +1,28 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
+import { Bebas_Neue, Barlow, Barlow_Condensed } from 'next/font/google'
 import { Toaster } from 'sonner'
 import './globals.css'
 
-const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
+const bebasNeue = Bebas_Neue({
+  weight: '400',
+  subsets: ['latin'],
+  variable: '--font-bebas',
+})
+
+const barlow = Barlow({
+  subsets: ['latin'],
+  weight: ['400', '500', '600'],
+  variable: '--font-barlow',
+})
+
+const barlowCondensed = Barlow_Condensed({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-barlow-condensed',
+})
 
 export const metadata: Metadata = {
-  title: 'Society App',
+  title: 'Confra Monstra · Society',
   description: 'Gerenciamento de grupo de futebol society',
 }
 
@@ -16,8 +32,11 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="pt-BR" className={inter.variable}>
-      <body className="min-h-screen bg-background font-sans antialiased">
+    <html
+      lang="pt-BR"
+      className={`${bebasNeue.variable} ${barlow.variable} ${barlowCondensed.variable}`}
+    >
+      <body className="min-h-screen bg-background font-barlow antialiased">
         {children}
         <Toaster richColors position="top-right" />
       </body>

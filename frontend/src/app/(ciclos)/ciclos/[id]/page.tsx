@@ -1,11 +1,10 @@
-interface CicloPageProps {
-  params: { id: string }
+import { redirect } from 'next/navigation'
+
+interface Props {
+  params: Promise<{ id: string }>
 }
 
-export default function CicloPage({ params }: CicloPageProps) {
-  return (
-    <main className="p-6">
-      <h1 className="text-2xl font-bold">Ciclo #{params.id}</h1>
-    </main>
-  )
+export default async function CicloPage({ params }: Props) {
+  const { id } = await params
+  redirect(`/ciclos?cicloId=${id}`)
 }

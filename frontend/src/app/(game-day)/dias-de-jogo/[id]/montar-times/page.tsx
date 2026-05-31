@@ -1,11 +1,10 @@
-interface MontarTimesPageProps {
-  params: { id: string }
-}
+import { redirect } from 'next/navigation'
 
-export default function MontarTimesPage({ params }: MontarTimesPageProps) {
-  return (
-    <main className="p-6">
-      <h1 className="text-2xl font-bold">Montar Times — Dia #{params.id}</h1>
-    </main>
-  )
+export default async function MontarTimesPage({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}) {
+  const { id } = await params
+  redirect(`/dias-de-jogo/${id}`)
 }

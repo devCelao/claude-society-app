@@ -1,7 +1,29 @@
 import { z } from 'zod'
 
 export const JogadorSchema = z.object({
-  // TODO: implementar campos conforme arquitetura
+  nome: z
+    .string({ error: 'Nome e obrigatorio' })
+    .min(2, 'Nome deve ter ao menos 2 caracteres')
+    .max(100, 'Nome deve ter no maximo 100 caracteres'),
+  apelido: z
+    .string()
+    .max(50, 'Apelido deve ter no maximo 50 caracteres')
+    .optional()
+    .nullable(),
+  posicao: z
+    .string()
+    .max(30, 'Posicao deve ter no maximo 30 caracteres')
+    .optional()
+    .nullable(),
+  convidado: z.boolean(),
+})
+
+export const JogadorUpdateSchema = JogadorSchema.partial()
+
+// Usado somente pelo Route Handler de reativacao
+export const JogadorReativarSchema = z.object({
+  deletedAt: z.null(),
 })
 
 export type JogadorInput = z.infer<typeof JogadorSchema>
+export type JogadorUpdateInput = z.infer<typeof JogadorUpdateSchema>
