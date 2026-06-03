@@ -2,21 +2,15 @@
 # Requer: output: 'standalone' em next.config.ts
 
 # ---------------------------------------------------------------------------
-# Stage 1: deps — instala dependencias de producao
-# ---------------------------------------------------------------------------
-FROM node:20-alpine AS deps
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --only=production
-
-# ---------------------------------------------------------------------------
-# Stage 2: builder — compila o Next.js com todas as dependencias
+# Stage 1: builder — compila o Next.js com todas as dependencias
 # ---------------------------------------------------------------------------
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
+ARG DATABASE_URL=mysql://build:build@localhost:3306/build
+ENV DATABASE_URL=$DATABASE_URL
 RUN npx prisma generate && npm run build
 
 # ---------------------------------------------------------------------------

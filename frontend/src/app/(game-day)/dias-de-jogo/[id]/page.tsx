@@ -2,6 +2,8 @@ import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/db'
 import { DiaDeJogoFlow, type Jogador, type TimeFormado, type Partida } from '@/components/game-day/DiaDeJogoFlow'
 
+export const dynamic = 'force-dynamic'
+
 export default async function DiaDeJogoPage({
   params,
 }: {

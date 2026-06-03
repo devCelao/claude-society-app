@@ -4,6 +4,7 @@ import { DashboardRefresher } from '@/components/dashboard/DashboardRefresher'
 import Link from 'next/link'
 import { CalendarDays } from 'lucide-react'
 
+export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Ao Vivo' }
 
 export default async function DashboardPage() {

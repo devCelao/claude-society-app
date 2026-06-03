@@ -2,6 +2,7 @@ import { Suspense } from 'react'
 import { prisma } from '@/lib/db'
 import { DiasDeJogoListagem } from '@/components/game-day/DiasDeJogoListagem'
 
+export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Dias de Jogo' }
 
 export default async function DiasDeJogoPage() {
