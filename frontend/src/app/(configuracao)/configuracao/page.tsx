@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { ConfiguracaoForm } from './ConfiguracaoForm'
 
+export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Configurações' }
 
 export default async function ConfiguracaoPage() {

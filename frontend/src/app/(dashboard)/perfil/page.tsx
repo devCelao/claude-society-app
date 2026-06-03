@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { PerfilForm } from '@/components/auth/PerfilForm'
 
+export const dynamic = 'force-dynamic'
+
 export default async function PerfilPage() {
   const session = await getServerSession(authOptions)
   if (!session?.user) redirect('/login')

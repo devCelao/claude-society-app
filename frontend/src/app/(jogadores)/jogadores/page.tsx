@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { JogadorListagem } from '@/components/jogadores/JogadorListagem'
 
+export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Jogadores' }
 
 export default async function JogadoresPage() {

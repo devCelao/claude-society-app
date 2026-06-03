@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/db'
 import { JogadorForm } from '@/components/jogadores/JogadorForm'
 
+export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Editar Jogador' }
 
 interface Props {

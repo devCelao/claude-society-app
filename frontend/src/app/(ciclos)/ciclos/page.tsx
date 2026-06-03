@@ -2,6 +2,7 @@ import { Suspense } from 'react'
 import { prisma } from '@/lib/db'
 import { CicloRanking } from '@/components/ciclos/CicloRanking'
 
+export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Ciclos' }
 
 export default async function CiclosPage({
