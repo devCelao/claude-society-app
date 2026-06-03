@@ -14,9 +14,10 @@ RUN npm ci --only=production
 # ---------------------------------------------------------------------------
 FROM node:20-alpine AS builder
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
+COPY package.json package-lock.json ./
+RUN npm ci
 COPY . .
-RUN npm run build
+RUN npx prisma generate && npm run build
 
 # ---------------------------------------------------------------------------
 # Stage 3: migrator — aplica prisma migrate deploy em producao
