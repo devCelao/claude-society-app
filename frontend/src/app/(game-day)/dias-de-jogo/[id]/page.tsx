@@ -1,72 +1,6 @@
 import { notFound } from 'next/navigation'
+import { prisma } from '@/lib/db'
 import { DiaDeJogoFlow, type Jogador, type TimeFormado, type Partida } from '@/components/game-day/DiaDeJogoFlow'
-
-// TODO: substituir por prisma
-const TODOS_JOGADORES: Jogador[] = [
-  { id: 1,  nome: 'Jonathan',           apelido: 'Jon',     convidado: false },
-  { id: 2,  nome: 'João Pedro',         apelido: null,      convidado: false },
-  { id: 3,  nome: 'Guilherme Bragança', apelido: 'Gui',     convidado: false },
-  { id: 4,  nome: 'Maicon',             apelido: null,      convidado: false },
-  { id: 5,  nome: 'João Victor',        apelido: 'JV',      convidado: false },
-  { id: 6,  nome: 'Bernardo',           apelido: null,      convidado: false },
-  { id: 7,  nome: 'Ricardo',            apelido: null,      convidado: false },
-  { id: 8,  nome: 'Vitinho',            apelido: null,      convidado: false },
-  { id: 9,  nome: 'Marcelo',            apelido: null,      convidado: false },
-  { id: 10, nome: 'Arthur',             apelido: null,      convidado: false },
-  { id: 11, nome: 'Pedro Pires',        apelido: 'PP',      convidado: false },
-  { id: 12, nome: 'Theo',               apelido: null,      convidado: false },
-  { id: 13, nome: 'Gustavo Borcard',    apelido: 'Borcard', convidado: false },
-  { id: 14, nome: 'Matheus Raposo',     apelido: 'Raposo',  convidado: false },
-  { id: 15, nome: 'Deyvison',           apelido: null,      convidado: false },
-  { id: 16, nome: 'Lucas Fonseca',      apelido: 'Lucas',   convidado: false },
-  { id: 17, nome: 'Pedro Braz',         apelido: 'Braz',    convidado: false },
-  { id: 18, nome: 'Miguel',             apelido: null,      convidado: false },
-]
-
-type MockDia = {
-  id: number
-  data: string
-  status: 'PENDENTE' | 'EM_ANDAMENTO' | 'FINALIZADO'
-  passo: 'lista' | 'times' | 'principal'
-  jogadoresSelecionados: Jogador[]
-  times: TimeFormado[]
-  partidas: Partida[]
-}
-
-const MOCK: Record<number, MockDia> = {
-  3: {
-    id: 3, data: '2026-05-31', status: 'PENDENTE', passo: 'lista',
-    jogadoresSelecionados: [], times: [], partidas: [],
-  },
-  2: {
-    id: 2, data: '2026-05-17', status: 'FINALIZADO', passo: 'principal',
-    jogadoresSelecionados: TODOS_JOGADORES,
-    times: [
-      { nome: 'Time A', cor: 'vermelho', jogadores: TODOS_JOGADORES.slice(0, 6) },
-      { nome: 'Time B', cor: 'azul',     jogadores: TODOS_JOGADORES.slice(6, 12) },
-      { nome: 'Time C', cor: 'verde',    jogadores: TODOS_JOGADORES.slice(12, 18) },
-    ],
-    partidas: [
-      { id: 1, timeAId: 1, timeBId: 2, status: 'FINALIZADA' },
-      { id: 2, timeAId: 2, timeBId: 3, status: 'FINALIZADA' },
-      { id: 3, timeAId: 1, timeBId: 3, status: 'FINALIZADA' },
-    ],
-  },
-  1: {
-    id: 1, data: '2026-05-03', status: 'FINALIZADO', passo: 'principal',
-    jogadoresSelecionados: TODOS_JOGADORES.slice(0, 16),
-    times: [
-      { nome: 'Time A', cor: 'laranja', jogadores: TODOS_JOGADORES.slice(0, 6) },
-      { nome: 'Time B', cor: 'azul',    jogadores: TODOS_JOGADORES.slice(6, 11) },
-      { nome: 'Time C', cor: 'verde',   jogadores: TODOS_JOGADORES.slice(11, 16) },
-    ],
-    partidas: [
-      { id: 4, timeAId: 4, timeBId: 5, status: 'FINALIZADA' },
-      { id: 5, timeAId: 5, timeBId: 6, status: 'FINALIZADA' },
-      { id: 6, timeAId: 4, timeBId: 6, status: 'FINALIZADA' },
-    ],
-  },
-}
 
 export default async function DiaDeJogoPage({
   params,
@@ -74,20 +8,108 @@ export default async function DiaDeJogoPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const dia = MOCK[parseInt(id, 10)]
+  const diaId = parseInt(id, 10)
+
+  const dia = await prisma.diaDeJogo.findUnique({
+    where: { id: diaId },
+    include: {
+      times: {
+        include: {
+          jogadorTimes: {
+            include: { jogador: { select: { id: true, nome: true, apelido: true, convidado: true } } },
+          },
+        },
+      },
+      partidas: {
+      orderBy: { id: 'asc' },
+      include: {
+        timeA: { select: { nome: true, cor: true } },
+        timeB: { select: { nome: true, cor: true } },
+        gols: { select: { timeId: true } },
+      },
+    },
+    },
+  })
+
   if (!dia) notFound()
+
+  const todosJogadores: Jogador[] = await prisma.jogador.findMany({
+    where: { deletedAt: null },
+    orderBy: { nome: 'asc' },
+    select: { id: true, nome: true, apelido: true, convidado: true },
+  })
+
+  // passo='times' com times formados = usuário está editando; qualquer outro caso com times=3 é 'principal'
+  const passoDB = dia.passo as 'lista' | 'times' | 'principal'
+  const passo: 'lista' | 'times' | 'principal' =
+    dia.times.length === 3 && passoDB !== 'times' ? 'principal' : passoDB
+
+  let jogadoresSelecionados: Jogador[]
+  if (passo === 'principal') {
+    const seen = new Set<number>()
+    jogadoresSelecionados = dia.times
+      .flatMap((t) => t.jogadorTimes.map((jt) => jt.jogador))
+      .filter((j) => {
+        if (seen.has(j.id)) return false
+        seen.add(j.id)
+        return true
+      })
+  } else {
+    const ids = dia.listaJogadorIds as number[] | null
+    jogadoresSelecionados = ids?.length
+      ? todosJogadores.filter((j) => ids.includes(j.id))
+      : []
+  }
+
+  const times: TimeFormado[] = dia.times.map((t) => ({
+    id: t.id,
+    nome: t.nome,
+    cor: t.cor as TimeFormado['cor'],
+    jogadores: t.jogadorTimes.map((jt) => jt.jogador),
+  }))
+
+  const partidas: Partida[] = dia.partidas.map((p) => ({
+    id: p.id,
+    timeAId: p.timeAId,
+    timeBId: p.timeBId,
+    timeANome: p.timeA.nome,
+    timeACor: p.timeA.cor,
+    timeBNome: p.timeB.nome,
+    timeBCor: p.timeB.cor,
+    status: p.status,
+    vencedorId: p.vencedorId,
+    golsA: p.gols.filter((g) => g.timeId === p.timeAId).length,
+    golsB: p.gols.filter((g) => g.timeId === p.timeBId).length,
+  }))
+
+  const golsDia = await prisma.gol.findMany({
+    where: { partida: { diaDeJogoId: diaId } },
+    select: { jogadorId: true, assistencia: { select: { jogadorId: true } } },
+  })
+
+  const statsJogadores: Record<number, { gols: number; assists: number }> = {}
+  for (const gol of golsDia) {
+    if (!statsJogadores[gol.jogadorId]) statsJogadores[gol.jogadorId] = { gols: 0, assists: 0 }
+    statsJogadores[gol.jogadorId].gols++
+    if (gol.assistencia) {
+      const aId = gol.assistencia.jogadorId
+      if (!statsJogadores[aId]) statsJogadores[aId] = { gols: 0, assists: 0 }
+      statsJogadores[aId].assists++
+    }
+  }
 
   return (
     <main className="p-6">
       <DiaDeJogoFlow
         diaId={dia.id}
-        data={dia.data}
+        data={dia.data ? dia.data.toISOString().split('T')[0] : null}
         status={dia.status}
-        passoinicial={dia.passo}
-        jogadoresSelecionadosInicial={dia.jogadoresSelecionados}
-        timesIniciais={dia.times}
-        todosJogadores={TODOS_JOGADORES}
-        partidasIniciais={dia.partidas}
+        passoinicial={passo}
+        jogadoresSelecionadosInicial={jogadoresSelecionados}
+        timesIniciais={times}
+        todosJogadores={todosJogadores}
+        partidasIniciais={partidas}
+        statsJogadores={statsJogadores}
       />
     </main>
   )

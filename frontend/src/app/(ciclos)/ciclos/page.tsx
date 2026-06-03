@@ -1,14 +1,8 @@
 import { Suspense } from 'react'
+import { prisma } from '@/lib/db'
 import { CicloRanking } from '@/components/ciclos/CicloRanking'
 
 export const metadata = { title: 'Ciclos' }
-
-// TODO: substituir por prisma quando banco estiver acessível
-const MOCK_CICLOS = [
-  { id: 3, nome: 'Maio 2026', inicioEm: '2026-05-01', fimEm: null },
-  { id: 2, nome: 'Abril 2026', inicioEm: '2026-04-01', fimEm: '2026-04-30' },
-  { id: 1, nome: 'Março 2026', inicioEm: '2026-03-01', fimEm: '2026-03-31' },
-]
 
 export default async function CiclosPage({
   searchParams,
@@ -16,11 +10,22 @@ export default async function CiclosPage({
   searchParams: Promise<{ cicloId?: string }>
 }) {
   const { cicloId } = await searchParams
-  const ciclos = MOCK_CICLOS
+
+  const raw = await prisma.ciclo.findMany({
+    orderBy: { inicioEm: 'desc' },
+    select: { id: true, nome: true, inicioEm: true, fimEm: true },
+  })
+
+  const ciclos = raw.map((c) => ({
+    id: c.id,
+    nome: c.nome,
+    inicioEm: c.inicioEm.toISOString().split('T')[0],
+    fimEm: c.fimEm ? c.fimEm.toISOString().split('T')[0] : null,
+  }))
 
   const cicloIdInicial = cicloId
     ? parseInt(cicloId, 10)
-    : (ciclos.find((c) => c.fimEm === null)?.id ?? ciclos[0]?.id ?? 1)
+    : (ciclos.find((c) => c.fimEm === null)?.id ?? ciclos[0]?.id ?? 0)
 
   return (
     <main className="p-6 space-y-6">

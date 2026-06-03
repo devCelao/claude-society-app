@@ -43,6 +43,15 @@ model Jogador {
   @@map("jogadores")
 }
 
+model ConfiguracaoJogos {
+  id          Int       @id @default(1)
+  corteInicio DateTime? @map("corte_inicio") @db.Date
+  corteFim    DateTime? @map("corte_fim") @db.Date
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@map("configuracao_jogos")
+}
+
 model Ciclo {
   id        Int       @id @default(autoincrement())
   nome      String    @db.VarChar(100)
@@ -57,14 +66,16 @@ model Ciclo {
 }
 
 model DiaDeJogo {
-  id        Int       @id @default(autoincrement())
-  cicloId   Int       @map("ciclo_id")
-  data      DateTime  @db.Date
-  status    StatusDia @default(PENDENTE)
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
+  id              Int       @id @default(autoincrement())
+  cicloId         Int?      @map("ciclo_id")
+  data            DateTime? @db.Date
+  status          StatusDia @default(PENDENTE)
+  passo           String    @default("lista") @map("passo") @db.VarChar(20)
+  listaJogadorIds Json?     @map("lista_jogador_ids")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
-  ciclo    Ciclo     @relation(fields: [cicloId], references: [id])
+  ciclo    Ciclo?    @relation(fields: [cicloId], references: [id])
   times    Time[]
   partidas Partida[]
 
@@ -108,9 +119,10 @@ model Partida {
   timeAId     Int           @map("time_a_id")
   timeBId     Int           @map("time_b_id")
   status      StatusPartida @default(AGUARDANDO)
-  inicioEm    DateTime?     @map("inicio_em")
-  fimEm       DateTime?     @map("fim_em")
-  vencedorId  Int?          @map("vencedor_id")
+  inicioEm         DateTime? @map("inicio_em")
+  timerAcumuladoMs Int       @default(0) @map("timer_acumulado_ms")
+  fimEm            DateTime? @map("fim_em")
+  vencedorId       Int?      @map("vencedor_id")
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
 

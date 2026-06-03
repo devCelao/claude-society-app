@@ -5,11 +5,11 @@ import { CalendarDays, Users, ChevronRight, Clock, CheckCircle2, Play } from 'lu
 
 type DiaResumo = {
   id: number
-  data: string
+  data: string | null
   status: 'PENDENTE' | 'EM_ANDAMENTO' | 'FINALIZADO'
   passo: 'lista' | 'times' | 'principal'
   totalJogadores: number
-  cicloNome: string
+  cicloNome: string | null
 }
 
 const PASSO_LABEL: Record<string, string> = {
@@ -66,7 +66,7 @@ export function DiaDeJogoCard({ dia, animDelay = 0 }: { dia: DiaResumo; animDela
 
       <div className="flex-1 min-w-0">
         <div className="font-barlow-condensed text-sm font-semibold text-foreground tracking-wide capitalize">
-          {formatData(dia.data)}
+          {dia.data ? formatData(dia.data) : 'Aguardando início'}
         </div>
         <div className="flex items-center gap-3 mt-0.5">
           <div className="flex items-center gap-1 font-barlow-condensed text-xs tracking-wide" style={{ color }}>
@@ -84,9 +84,11 @@ export function DiaDeJogoCard({ dia, animDelay = 0 }: { dia: DiaResumo; animDela
         </div>
       </div>
 
-      <div className="font-barlow-condensed text-[10px] tracking-widest text-muted-foreground mr-1">
-        {dia.cicloNome}
-      </div>
+      {dia.cicloNome && (
+        <div className="font-barlow-condensed text-[10px] tracking-widest text-muted-foreground mr-1">
+          {dia.cicloNome}
+        </div>
+      )}
 
       <ChevronRight size={15} className="text-muted-foreground flex-shrink-0 transition-transform group-hover:translate-x-0.5" />
     </Link>

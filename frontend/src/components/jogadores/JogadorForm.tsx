@@ -8,7 +8,7 @@ import { JogadorSchema, type JogadorInput } from '@/lib/validations/jogador'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
 
 interface Props {
   jogadorId?: number
@@ -81,10 +81,10 @@ export function JogadorForm({ jogadorId, defaultValues }: Props) {
       </div>
 
       <div className="flex items-center gap-3">
-        <Switch
+        <Checkbox
           id="convidado"
           checked={convidado}
-          onCheckedChange={(val) => setValue('convidado', val)}
+          onCheckedChange={(val) => setValue('convidado', Boolean(val))}
         />
         <Label htmlFor="convidado">Jogador convidado</Label>
       </div>

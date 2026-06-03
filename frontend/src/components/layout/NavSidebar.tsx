@@ -3,21 +3,21 @@
 import { useRef, useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Users, CalendarDays, Trophy, Settings, RefreshCcw } from 'lucide-react'
+import { LayoutDashboard, Users, CalendarDays, Trophy, CalendarRange } from 'lucide-react'
 
 const navItems = [
-  { href: '/dashboard',    label: 'Dashboard',    icon: LayoutDashboard },
+  { href: '/dashboard',    label: 'Ao Vivo',      icon: LayoutDashboard },
   { href: '/jogadores',    label: 'Jogadores',    icon: Users },
-  { href: '/ciclos',       label: 'Ciclos',       icon: Trophy },
-  { href: '/dias-de-jogo', label: 'Dias de Jogo', icon: CalendarDays },
+  { href: '/ciclos',       label: 'Ranking',       icon: Trophy },
+  { href: '/dias-de-jogo', label: 'Confrontos', icon: CalendarDays },
 ]
 
 const configItems = [
   {
-    href: '/ciclos?acao=configurar',
-    label: 'Configurar Ciclo',
-    icon: RefreshCcw,
-    description: 'Datas de inicio e encerramento',
+    href: '/configuracao',
+    label: 'Data de Corte',
+    icon: CalendarRange,
+    description: 'Configurar periodo do ciclo ativo',
   },
 ]
 
@@ -103,7 +103,7 @@ export function NavSidebar({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-background flex flex-col">
       {/* Desktop top nav */}
       <header
-        className="sticky top-0 z-50 hidden md:flex items-center h-14 px-7 gap-6 border-b border-border"
+        className="sticky top-0 z-50 hidden md:flex items-center h-14 px-7 gap-6 border-b border-border print:hidden"
         style={{ background: '#050505' }}
       >
         <Link href="/dashboard" className="flex items-center gap-2.5 mr-6 flex-shrink-0">
@@ -150,7 +150,7 @@ export function NavSidebar({ children }: { children: React.ReactNode }) {
 
       {/* Mobile header */}
       <header
-        className="md:hidden px-4 py-2.5 flex items-center justify-between border-b border-border"
+        className="md:hidden px-4 py-2.5 flex items-center justify-between border-b border-border print:hidden"
         style={{ background: '#050505' }}
       >
         <Link href="/dashboard" className="flex items-center gap-2">
@@ -179,7 +179,7 @@ export function NavSidebar({ children }: { children: React.ReactNode }) {
 
       {/* Mobile bottom nav */}
       <nav
-        className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex pt-2 pb-4 px-1 border-t border-border"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex pt-2 pb-4 px-1 border-t border-border print:hidden"
         style={{ background: '#050505' }}
       >
         {navItems.map((item) => {

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { ListaDoDia } from './ListaDoDia'
 import { MontarTimes } from './MontarTimes'
@@ -26,20 +27,30 @@ export type Partida = {
   id: number
   timeAId: number
   timeBId: number
+  timeANome: string
+  timeACor: string
+  timeBNome: string
+  timeBCor: string
   status: 'AGUARDANDO' | 'EM_ANDAMENTO' | 'FINALIZADA'
+  vencedorId: number | null
+  golsA: number
+  golsB: number
 }
+
+export type StatsJogadores = Record<number, { gols: number; assists: number }>
 
 type Passo = 'lista' | 'times' | 'principal'
 
 interface Props {
   diaId: number
-  data: string
+  data: string | null
   status: 'PENDENTE' | 'EM_ANDAMENTO' | 'FINALIZADO'
   passoinicial: Passo
   jogadoresSelecionadosInicial: Jogador[]
   timesIniciais: TimeFormado[]
   todosJogadores: Jogador[]
   partidasIniciais: Partida[]
+  statsJogadores: StatsJogadores
 }
 
 export function DiaDeJogoFlow({
@@ -51,7 +62,9 @@ export function DiaDeJogoFlow({
   timesIniciais,
   todosJogadores,
   partidasIniciais,
+  statsJogadores,
 }: Props) {
+  const router = useRouter()
   const [passo, setPasso] = useState<Passo>(passoinicial)
   const [jogadoresSelecionados, setJogadoresSelecionados] = useState<Jogador[]>(jogadoresSelecionadosInicial)
   const [times, setTimes] = useState<TimeFormado[]>(timesIniciais)
@@ -59,62 +72,86 @@ export function DiaDeJogoFlow({
   const [partidas] = useState<Partida[]>(partidasIniciais)
 
   async function handleFecharLista(jogadores: Jogador[]) {
-    try {
-      await fetch(`/api/dias-de-jogo/${diaId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ passo: 'times', jogadorIds: jogadores.map((j) => j.id) }),
-      })
-    } catch {
-      // ignora erro de rede no mock — estado avança mesmo assim
+    const res = await fetch(`/api/dias-de-jogo/${diaId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passo: 'times', jogadorIds: jogadores.map((j) => j.id) }),
+    })
+    if (!res.ok) {
+      toast.error('Erro ao salvar lista de jogadores')
+      return
     }
     setJogadoresSelecionados(jogadores)
     setPasso('times')
+    router.refresh()
     toast.success(`Lista fechada com ${jogadores.length} jogadores`)
   }
 
+  async function handleVoltarDeTimes() {
+    const res = await fetch(`/api/dias-de-jogo/${diaId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passo: 'lista' }),
+    })
+    if (!res.ok) {
+      toast.error('Erro ao voltar para a lista')
+      return
+    }
+    setTimes([])
+    setPasso('lista')
+    router.refresh()
+  }
+
   async function handleFecharTimes(timesFormados: TimeFormado[]) {
-    try {
-      await fetch(`/api/dias-de-jogo/${diaId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          passo: 'principal',
-          status: 'EM_ANDAMENTO',
-          times: timesFormados.map((t) => ({
-            nome: t.nome,
-            cor: t.cor,
-            jogadorIds: t.jogadores.map((j) => j.id),
-          })),
-        }),
-      })
-    } catch {}
+    const res = await fetch(`/api/dias-de-jogo/${diaId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        passo: 'principal',
+        times: timesFormados.map((t) => ({
+          nome: t.nome,
+          cor: t.cor,
+          jogadorIds: t.jogadores.map((j) => j.id),
+        })),
+      }),
+    })
+    if (!res.ok) {
+      toast.error('Erro ao salvar times')
+      return
+    }
     setTimes(timesFormados)
-    setStatus('EM_ANDAMENTO')
     setPasso('principal')
+    router.refresh()
     toast.success('Times formados! Boa pelada!')
   }
 
+  function handleIniciado() {
+    setStatus('EM_ANDAMENTO')
+    router.refresh()
+    router.push('/dashboard')
+  }
+
   async function handleEditarTimes() {
-    // Se havia partidas EM_ANDAMENTO, deleta (já validado pelo chamador com confirmação)
-    const iniciadas = partidas.filter((p) => p.status === 'EM_ANDAMENTO' || p.status === 'FINALIZADA')
-    if (iniciadas.length > 0) {
-      try {
-        await Promise.all(
-          iniciadas.map((p) =>
-            fetch(`/api/dias-de-jogo/${diaId}/partidas/${p.id}`, { method: 'DELETE' })
-          )
-        )
-      } catch {}
+    const res = await fetch(`/api/dias-de-jogo/${diaId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passo: 'editar' }),
+    })
+    if (!res.ok) {
+      toast.error('Erro ao voltar para edição de times')
+      return
     }
+    if (status === 'EM_ANDAMENTO') setStatus('PENDENTE')
     setPasso('times')
+    // Invalida cache do router para que /dashboard reflita o novo status
+    router.refresh()
   }
 
   if (passo === 'lista') {
     return (
       <ListaDoDia
         diaId={diaId}
-        data={data}
+        data={data ?? ''}
         todosJogadores={todosJogadores}
         jogadoresSelecionados={jogadoresSelecionados}
         onFechar={handleFecharLista}
@@ -126,11 +163,11 @@ export function DiaDeJogoFlow({
     return (
       <MontarTimes
         diaId={diaId}
-        data={data}
+        data={data ?? ''}
         jogadoresSelecionados={jogadoresSelecionados}
         timesIniciais={times}
         onFechar={handleFecharTimes}
-        onVoltar={() => setPasso('lista')}
+        onVoltar={handleVoltarDeTimes}
       />
     )
   }
@@ -142,7 +179,9 @@ export function DiaDeJogoFlow({
       times={times}
       status={status}
       partidas={partidas}
+      statsJogadores={statsJogadores}
       onEditarTimes={handleEditarTimes}
+      onIniciado={handleIniciado}
     />
   )
 }

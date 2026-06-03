@@ -58,7 +58,7 @@ export function ListaDoDia({ todosJogadores, jogadoresSelecionados, data, onFech
       <div>
         <div className="w-8 h-[3px] rounded-sm mb-2" style={{ background: '#f5c400' }} />
         <h1 className="font-bebas text-4xl md:text-5xl tracking-widest leading-none capitalize">
-          {formatData(data)}
+          {data ? formatData(data) : 'Confronto'}
         </h1>
         <div className="flex items-center gap-2 mt-2">
           <div
@@ -71,19 +71,19 @@ export function ListaDoDia({ todosJogadores, jogadoresSelecionados, data, onFech
         </div>
       </div>
 
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 font-barlow-condensed text-sm">
-          <Users size={15} className="text-muted-foreground" />
-          <span className="text-foreground font-semibold">{count}</span>
-          <span className="text-muted-foreground">selecionados (máx. 18)</span>
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 font-barlow-condensed text-sm flex-shrink-0">
+          <Users size={14} className="text-muted-foreground" />
+          <span className="text-foreground font-semibold tabular-nums">{count}</span>
+          <span className="text-muted-foreground">/ 18</span>
         </div>
         <button
           onClick={fecharLista}
           disabled={count === 0 || salvando}
-          className="px-5 py-2 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide transition-all disabled:opacity-30"
+          className="flex-1 py-2.5 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide transition-all disabled:opacity-30"
           style={{ background: '#f5c400', color: '#000' }}
         >
-          {salvando ? 'Fechando...' : `Fechar Lista — ${count} jogadores`}
+          {salvando ? 'Fechando...' : 'Fechar Lista'}
         </button>
       </div>
 

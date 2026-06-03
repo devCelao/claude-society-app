@@ -19,7 +19,18 @@ COPY . .
 RUN npm run build
 
 # ---------------------------------------------------------------------------
-# Stage 3: runtime — imagem final minima com standalone output
+# Stage 3: migrator — aplica prisma migrate deploy em producao
+# ---------------------------------------------------------------------------
+FROM node:20-alpine AS migrator
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY prisma ./prisma
+COPY prisma.config.ts ./
+ENTRYPOINT ["npx", "prisma", "migrate", "deploy"]
+
+# ---------------------------------------------------------------------------
+# Stage 4: runtime — imagem final minima com standalone output
 # ---------------------------------------------------------------------------
 FROM node:20-alpine AS runtime
 WORKDIR /app

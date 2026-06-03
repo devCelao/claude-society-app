@@ -1,207 +1,177 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import useSWR from 'swr'
-import Link from 'next/link'
-import { Play, Pause, RotateCcw, ArrowRight, CirclePlus, BarChart2, Pencil, Trash2, Trophy } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
+import { Trophy, Play, Pause, RotateCcw, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import type { DashboardData, CorTime } from '@/app/api/dashboard/route'
+
+// ─── Tipos ───────────────────────────────────────────────────────────────────
+
+type CorTime = 'vermelho' | 'azul' | 'verde' | 'laranja'
 
 const COR_HEX: Record<CorTime, string> = {
-  vermelho: '#ef4444',
-  azul:     '#3b82f6',
-  verde:    '#22c55e',
-  laranja:  '#f97316',
+  vermelho: '#ef4444', azul: '#3b82f6', verde: '#22c55e', laranja: '#f97316',
 }
-
 const COR_BG: Record<CorTime, string> = {
-  vermelho: 'rgba(239,68,68,0.18)',
-  azul:     'rgba(59,130,246,0.18)',
-  verde:    'rgba(34,197,94,0.18)',
-  laranja:  'rgba(249,115,22,0.18)',
+  vermelho: 'rgba(239,68,68,0.12)', azul: 'rgba(59,130,246,0.12)',
+  verde: 'rgba(34,197,94,0.12)', laranja: 'rgba(249,115,22,0.12)',
 }
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json())
 const DURACAO_MS = 7 * 60 * 1000
 
-type MatchStatus = 'aguardando_inicio' | 'em_andamento' | 'pausado'
-type GolEntry = {
-  id: string
-  equipe: 'A' | 'B'
-  timeNome: string
-  cor: CorTime
-  jogadorId: number
-  jogadorNome: string
-  assistId?: number
-  assistNome?: string
-  minuto: string
-  contra: boolean
+type Jogador = { id: number; nome: string; apelido: string | null; convidado: boolean }
+type TimeData = { id: number; nome: string; cor: string; jogadores: Jogador[] }
+type GolData = {
+  id: number; timeId: number; jogadorId: number; jogadorNome: string
+  assistenciaJogadorId: number | null; assistenciaJogadorNome: string | null
 }
-type Vitorias = Record<number, number>
+type PartidaData = {
+  id: number; timeAId: number; timeBId: number
+  timeANome: string; timeBNome: string; timeACor: string; timeBCor: string
+  status: string; inicioEm: string | null; timerAcumuladoMs: number; vencedorId: number | null
+  gols: GolData[]
+}
 
-// ─── Dialog de Registro de Gol ───────────────────────────────────────────────
+interface Props {
+  diaId: number; data: string; cicloNome: string | null
+  times: TimeData[]; partidas: PartidaData[]
+}
 
-type TimeInfo = DashboardData['diaAtivo']['times'][number]
+// ─── Fase do jogo ────────────────────────────────────────────────────────────
 
-function GolDialog({
-  open, onOpenChange, equipe, timeA, timeB, minuto,
-  golExistente, onSalvar, onExcluir,
-}: {
-  open: boolean
-  onOpenChange: (v: boolean) => void
-  equipe: 'A' | 'B'
-  timeA: TimeInfo
-  timeB: TimeInfo
-  minuto: string
-  golExistente: GolEntry | null
-  onSalvar: (dados: Omit<GolEntry, 'id' | 'minuto'>) => void
-  onExcluir?: () => void
+type GamePhase =
+  | { type: 'pronto' }
+  | { type: 'configurando' }
+  | { type: 'jogando'; partidaId: number; timeAId: number; timeBId: number; waitingTeamId: number }
+  | { type: 'entre_partidas'; vencedorId: number; perdedorId: number; prevWaitingId: number; golsA: number; golsB: number }
+  | { type: 'empate_decisao'; timeAId: number; timeBId: number; prevWaitingId: number }
+
+function derivePhase(partidas: PartidaData[], times: TimeData[]): GamePhase {
+  if (partidas.length === 0) return { type: 'pronto' }
+  const last = partidas[partidas.length - 1]
+  const waitingTeamId = times.find((t) => t.id !== last.timeAId && t.id !== last.timeBId)?.id ?? times[0].id
+
+  if (last.status === 'EM_ANDAMENTO') {
+    return { type: 'jogando', partidaId: last.id, timeAId: last.timeAId, timeBId: last.timeBId, waitingTeamId }
+  }
+  if (last.status === 'FINALIZADA') {
+    if (last.vencedorId === null) {
+      return { type: 'empate_decisao', timeAId: last.timeAId, timeBId: last.timeBId, prevWaitingId: waitingTeamId }
+    }
+    const perdedorId = last.vencedorId === last.timeAId ? last.timeBId : last.timeAId
+    return {
+      type: 'entre_partidas',
+      vencedorId: last.vencedorId, perdedorId, prevWaitingId: waitingTeamId,
+      golsA: last.gols.filter((g) => g.timeId === last.timeAId).length,
+      golsB: last.gols.filter((g) => g.timeId === last.timeBId).length,
+    }
+  }
+  return { type: 'pronto' }
+}
+
+// ─── Stats ────────────────────────────────────────────────────────────────────
+
+function computeStats(partidas: PartidaData[], times: TimeData[], localGols: GolData[]) {
+  const victories: Record<number, number> = {}
+  times.forEach((t) => { victories[t.id] = 0 })
+  partidas.filter((p) => p.status === 'FINALIZADA' && p.vencedorId).forEach((p) => {
+    victories[p.vencedorId!] = (victories[p.vencedorId!] ?? 0) + 1
+  })
+  const allGols = [...partidas.flatMap((p) => p.gols), ...localGols]
+  const byPlayer: Record<number, { nome: string; gols: number; assists: number }> = {}
+  allGols.forEach((g) => {
+    if (!byPlayer[g.jogadorId]) byPlayer[g.jogadorId] = { nome: g.jogadorNome, gols: 0, assists: 0 }
+    byPlayer[g.jogadorId].gols++
+    if (g.assistenciaJogadorId) {
+      const aid = g.assistenciaJogadorId
+      if (!byPlayer[aid]) byPlayer[aid] = { nome: g.assistenciaJogadorNome!, gols: 0, assists: 0 }
+      byPlayer[aid].assists++
+    }
+  })
+  return { victories, jogadores: Object.values(byPlayer).sort((a, b) => b.gols - a.gols || b.assists - a.assists) }
+}
+
+// ─── TimeCard ─────────────────────────────────────────────────────────────────
+
+function TimeCard({ time }: { time: TimeData }) {
+  const hex = COR_HEX[time.cor as CorTime] ?? '#888'
+  return (
+    <div className="rounded-xl border overflow-hidden" style={{ borderColor: `${hex}40`, background: '#111' }}>
+      <div className="px-4 py-3 flex items-center justify-between" style={{ background: `${hex}18`, borderBottom: `1px solid ${hex}30` }}>
+        <span className="font-bebas tracking-widest text-xl" style={{ color: hex }}>{time.nome}</span>
+        <div className="flex items-center gap-1.5 font-barlow-condensed text-xs capitalize" style={{ color: hex }}>
+          <div className="w-2.5 h-2.5 rounded-full" style={{ background: hex }} />
+          {time.cor}
+        </div>
+      </div>
+      <div className="p-3 space-y-1">
+        {time.jogadores.map((j) => (
+          <div key={j.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg font-barlow-condensed text-sm"
+            style={{ background: 'rgba(255,255,255,0.03)' }}>
+            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: hex }} />
+            <span className="flex-1 text-foreground">{j.nome}</span>
+            {j.convidado && (
+              <span className="text-[9px] tracking-widest px-1.5 py-0.5 rounded"
+                style={{ background: 'rgba(251,146,60,0.15)', color: '#fb923c' }}>G</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── GolModal ─────────────────────────────────────────────────────────────────
+
+function GolModal({ open, onClose, teamName, teamCor, teamPlayers, otherPlayers, onConfirm, saving }: {
+  open: boolean; onClose: () => void; teamName: string; teamCor: string
+  teamPlayers: Jogador[]; otherPlayers: Jogador[]
+  onConfirm: (jogadorId: number, assistId: number | null) => void; saving: boolean
 }) {
-  const [aFavor, setAFavor] = useState(true)
+  const hex = COR_HEX[teamCor as CorTime] ?? '#888'
   const [jogadorId, setJogadorId] = useState('')
   const [assistId, setAssistId] = useState('')
-
-  useEffect(() => {
-    if (!open) return
-    setAFavor(golExistente ? !golExistente.contra : true)
-    setJogadorId(golExistente ? String(golExistente.jogadorId) : '')
-    setAssistId(golExistente?.assistId ? String(golExistente.assistId) : '')
-  }, [open, golExistente])
-
-  const timeScorerOrigem = equipe === 'A' ? timeA : timeB
-  const timeCredito = aFavor
-    ? (equipe === 'A' ? timeA : timeB)
-    : (equipe === 'A' ? timeB : timeA)
-  const todosJogadores = [...timeA.jogadores, ...timeB.jogadores]
-  const jogadoresScorerPool = timeScorerOrigem.jogadores
-  const jogadoresAssistPool = todosJogadores.filter((j) => String(j.id) !== jogadorId)
-
-  function handleSalvar() {
-    if (!jogadorId) return
-    const jogador = todosJogadores.find((j) => j.id === Number(jogadorId))!
-    const assist = assistId ? todosJogadores.find((j) => j.id === Number(assistId)) : undefined
-    onSalvar({
-      equipe: aFavor ? equipe : (equipe === 'A' ? 'B' : 'A'),
-      timeNome: timeCredito.nome,
-      cor: timeCredito.cor,
-      jogadorId: jogador.id,
-      jogadorNome: jogador.nome,
-      assistId: assist?.id,
-      assistNome: assist?.nome,
-      contra: !aFavor,
-    })
-    onOpenChange(false)
-  }
-
-  const hexCredito = COR_HEX[timeCredito.cor]
-
+  useEffect(() => { if (!open) { setJogadorId(''); setAssistId('') } }, [open])
+  const assistPool = teamPlayers.filter((j) => String(j.id) !== jogadorId)
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose() }}>
       <DialogContent style={{ background: '#111111', border: '1px solid #242424' }}>
         <DialogHeader>
           <DialogTitle className="font-bebas tracking-widest text-2xl">
-            {golExistente ? 'Editar Gol' : 'Registrar Gol'}
+            <span style={{ color: hex }}>GOL!</span>
+            <span className="text-muted-foreground text-base font-barlow-condensed tracking-wide normal-case ml-2">{teamName}</span>
           </DialogTitle>
         </DialogHeader>
-
-        <div className="space-y-5 pt-1">
-          {/* Toggle A favor / Contra */}
-          <div className="flex items-center justify-center gap-4">
-            <button
-              onClick={() => setAFavor(true)}
-              className="font-barlow-condensed text-sm font-semibold tracking-wide transition-colors"
-              style={{ color: aFavor ? COR_HEX[timeScorerOrigem.cor] : '#555' }}
-            >
-              A favor
-            </button>
-            <button
-              onClick={() => setAFavor((v) => !v)}
-              className="w-12 h-6 rounded-full relative transition-colors flex-shrink-0"
-              style={{ background: aFavor ? COR_HEX[timeScorerOrigem.cor] : '#555' }}
-            >
-              <div
-                className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
-                style={{ left: aFavor ? '2px' : 'calc(100% - 22px)' }}
-              />
-            </button>
-            <button
-              onClick={() => setAFavor(false)}
-              className="font-barlow-condensed text-sm font-semibold tracking-wide transition-colors"
-              style={{ color: !aFavor ? '#f87171' : '#555' }}
-            >
-              Contra
-            </button>
-          </div>
-
-          {/* Indicador do time que recebe o gol */}
-          <div className="text-center font-barlow-condensed text-xs text-muted-foreground">
-            Gol creditado ao{' '}
-            <span className="font-semibold" style={{ color: hexCredito }}>
-              {timeCredito.nome}
-            </span>
-            {!aFavor && <span className="text-muted-foreground"> (contra)</span>}
-          </div>
-
-          {/* Quem marcou */}
+        <div className="space-y-4 pt-1">
           <div className="space-y-1.5">
-            <label className="font-barlow-condensed text-sm text-foreground">
-              Quem marcou o gol?
-            </label>
-            <select
-              value={jogadorId}
-              onChange={(e) => { setJogadorId(e.target.value); setAssistId('') }}
-              className="w-full px-3 py-2.5 rounded-xl font-barlow-condensed text-sm text-foreground focus:outline-none"
-              style={{ background: '#1a1a1a', border: '1px solid #333' }}
-            >
+            <label className="font-barlow-condensed text-sm text-foreground">Quem marcou?</label>
+            <select value={jogadorId} onChange={(e) => { setJogadorId(e.target.value); setAssistId('') }}
+              className="w-full px-3 py-2.5 rounded-xl font-barlow-condensed text-sm focus:outline-none"
+              style={{ background: '#1a1a1a', border: '1px solid #333', color: jogadorId ? '#f0ede0' : '#666' }}>
               <option value="">Selecione o jogador</option>
-              {jogadoresScorerPool.map((j) => (
-                <option key={j.id} value={j.id}>{j.nome}</option>
-              ))}
+              {teamPlayers.map((j) => <option key={j.id} value={j.id}>{j.nome}</option>)}
             </select>
           </div>
-
-          {/* Assistência (só se não for contra) */}
-          {aFavor && (
-            <div className="space-y-1.5">
-              <label className="font-barlow-condensed text-sm text-foreground">
-                Quem deu a assistência?{' '}
-                <span className="text-muted-foreground text-xs">(opcional)</span>
-              </label>
-              <select
-                value={assistId}
-                onChange={(e) => setAssistId(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl font-barlow-condensed text-sm text-foreground focus:outline-none"
-                style={{ background: '#1a1a1a', border: '1px solid #333' }}
-              >
-                <option value="">Nenhuma assistência</option>
-                {jogadoresAssistPool.map((j) => (
-                  <option key={j.id} value={j.id}>{j.nome}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Ações */}
+          <div className="space-y-1.5">
+            <label className="font-barlow-condensed text-sm text-foreground">
+              Assistência <span className="text-muted-foreground text-xs">(opcional)</span>
+            </label>
+            <select value={assistId} onChange={(e) => setAssistId(e.target.value)} disabled={!jogadorId}
+              className="w-full px-3 py-2.5 rounded-xl font-barlow-condensed text-sm focus:outline-none disabled:opacity-40"
+              style={{ background: '#1a1a1a', border: '1px solid #333', color: assistId ? '#f0ede0' : '#666' }}>
+              <option value="">Sem assistência</option>
+              {assistPool.map((j) => <option key={j.id} value={j.id}>{j.nome}</option>)}
+            </select>
+          </div>
           <div className="flex gap-2 pt-1">
-            <Button
-              onClick={handleSalvar}
-              disabled={!jogadorId}
-              className="flex-1 font-barlow-condensed tracking-wide"
-              style={{ background: '#3b82f6', color: '#fff', border: 'none' }}
-            >
-              {golExistente ? 'Salvar alterações' : 'Salvar Gol'}
+            <Button onClick={() => onConfirm(Number(jogadorId), assistId ? Number(assistId) : null)}
+              disabled={!jogadorId || saving} className="flex-1 font-barlow-condensed tracking-wide"
+              style={{ background: hex, color: '#fff', border: 'none' }}>
+              {saving ? 'Salvando...' : 'Confirmar Gol'}
             </Button>
-            {golExistente && onExcluir && (
-              <Button
-                variant="outline"
-                onClick={() => { onExcluir(); onOpenChange(false) }}
-                className="font-barlow-condensed tracking-wide gap-1.5"
-                style={{ borderColor: '#f87171', color: '#f87171' }}
-              >
-                <Trash2 size={14} /> Excluir
-              </Button>
-            )}
+            <Button variant="outline" onClick={onClose} className="font-barlow-condensed">Cancelar</Button>
           </div>
         </div>
       </DialogContent>
@@ -209,821 +179,684 @@ function GolDialog({
   )
 }
 
-function PulsingDot() {
-  return (
-    <span className="relative flex items-center justify-center w-2.5 h-2.5 flex-shrink-0">
-      <span className="absolute inline-flex w-full h-full rounded-full opacity-75 animate-ping" style={{ background: '#ef4444' }} />
-      <span className="relative inline-flex w-2 h-2 rounded-full" style={{ background: '#ef4444' }} />
-    </span>
-  )
-}
+// ─── Stats do dia ─────────────────────────────────────────────────────────────
 
-function formatData(iso: string) {
-  const d = new Date(iso + 'T12:00:00')
-  return d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })
-}
-
-// ─── Sub-view: Configurar Partida ───────────────────────────────────────────
-
-function ConfigurarPartida({
-  times,
-  vitorias,
-  historicoDia,
-  diaId,
-  dataStr,
-  onConfirmar,
-  onEncerrarDia,
-  onAnularDia,
-}: {
-  times: DashboardData['diaAtivo']['times']
-  vitorias: Vitorias
-  historicoDia: GolEntry[]
-  diaId: number
-  dataStr: string
-  onConfirmar: (idA: number, idB: number) => void
-  onEncerrarDia: () => void
-  onAnularDia: () => void
+function StatsDia({ partidas, times, victories, jogadores }: {
+  partidas: PartidaData[]; times: TimeData[]
+  victories: Record<number, number>; jogadores: { nome: string; gols: number; assists: number }[]
 }) {
-  const [timeAId, setTimeAId] = useState<string>('')
-  const [timeBId, setTimeBId] = useState<string>('')
-
-  const invalido = !timeAId || !timeBId || timeAId === timeBId
-
+  const finished = partidas.filter((p) => p.status === 'FINALIZADA')
   return (
-    <div className="space-y-0">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: '#1e1e1e', background: '#0a0a0a' }}>
-        <div className="flex items-center gap-2">
-          <PulsingDot />
-          <span className="font-bebas tracking-widest text-lg" style={{ color: '#f5c400' }}>
-            CONFIGURAR PARTIDA
-          </span>
-          <span className="font-barlow-condensed text-sm text-muted-foreground ml-1">
-            · {formatData(dataStr)}
-          </span>
-        </div>
-        <Link href={`/dias-de-jogo/${diaId}`} className="flex items-center gap-1 font-barlow-condensed text-xs tracking-wide text-muted-foreground hover:text-foreground transition-colors">
-          Ver dia <ArrowRight size={12} />
-        </Link>
-      </div>
-
-      {/* Seleção de times */}
-      <div className="px-4 py-6 space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-end gap-2 sm:gap-3">
-          {/* Time A */}
-          <div className="flex-1 space-y-1.5">
-            <label className="font-barlow-condensed text-xs tracking-widest uppercase text-muted-foreground">
-              Time A:
-            </label>
-            <select
-              value={timeAId}
-              onChange={(e) => setTimeAId(e.target.value)}
-              className="w-full px-3 py-3 rounded-xl font-barlow-condensed text-sm text-foreground cursor-pointer focus:outline-none"
-              style={{ background: '#1a1a1a', border: '1px solid #333' }}
-            >
-              <option value="">Selecione um time</option>
-              {times.map((t) => (
-                <option key={t.id} value={t.id} disabled={String(t.id) === timeBId}>
-                  {t.nome} ({t.cor})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* VS */}
-          <div className="text-center sm:pb-2.5 font-bebas text-2xl tracking-widest flex-shrink-0 leading-none py-1 sm:py-0" style={{ color: '#ef4444' }}>
-            VS
-          </div>
-
-          {/* Time B */}
-          <div className="flex-1 space-y-1.5">
-            <label className="font-barlow-condensed text-xs tracking-widest uppercase text-muted-foreground">
-              Time B:
-            </label>
-            <select
-              value={timeBId}
-              onChange={(e) => setTimeBId(e.target.value)}
-              className="w-full px-3 py-3 rounded-xl font-barlow-condensed text-sm text-foreground cursor-pointer focus:outline-none"
-              style={{ background: '#1a1a1a', border: '1px solid #333' }}
-            >
-              <option value="">Selecione um time</option>
-              {times.map((t) => (
-                <option key={t.id} value={t.id} disabled={String(t.id) === timeAId}>
-                  {t.nome} ({t.cor})
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {timeAId && timeBId && timeAId === timeBId && (
-          <p className="font-barlow-condensed text-xs text-destructive">
-            Os dois times não podem ser iguais
-          </p>
-        )}
-
-        <div className="flex gap-2 pt-1">
-          <button
-            onClick={() => onConfirmar(Number(timeAId), Number(timeBId))}
-            disabled={invalido}
-            className="flex-1 py-3 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide transition-all disabled:opacity-30"
-            style={{ background: '#3b82f6', color: '#fff' }}
-          >
-            Confirmar Confronto
-          </button>
-          <Link
-            href="/ciclos"
-            className="flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl font-barlow-condensed text-sm tracking-wide border transition-colors"
-            style={{ borderColor: '#333', color: '#888', background: 'transparent' }}
-          >
-            <BarChart2 size={14} />
-            Estatísticas
-          </Link>
-        </div>
-      </div>
-
-      {/* Vitórias do dia */}
-      {times.length > 0 && (
-        <div className="px-4 pb-4 grid grid-cols-3 gap-2">
-          {times.map((t) => {
-            const hex = COR_HEX[t.cor]
-            return (
-              <div key={t.id} className="rounded-xl py-3 text-center" style={{ background: '#141414', border: '1px solid #222' }}>
-                <div className="font-barlow-condensed text-xs text-muted-foreground mb-0.5 truncate px-1 capitalize">{t.nome}</div>
-                <div className="font-bebas text-3xl" style={{ color: hex }}>{vitorias[t.id] ?? 0}</div>
-                <div className="font-barlow-condensed text-[10px] text-muted-foreground tracking-wide">vitórias</div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Histórico do dia */}
-      {historicoDia.length > 0 && (
-        <div className="px-4 pb-4">
-          <div className="rounded-xl px-4 py-3 space-y-1" style={{ background: '#141414', border: '1px solid #222' }}>
-            <div className="font-barlow-condensed text-[10px] tracking-widest uppercase text-muted-foreground mb-2">
-              Histórico de Gols do Dia
-            </div>
-            {historicoDia.map((g, i) => (
-              <div key={i} className="flex items-center gap-2 font-barlow-condensed text-sm">
-                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: COR_HEX[g.cor] }} />
-                <span style={{ color: COR_HEX[g.cor] }}>{g.jogadorNome}</span>
-                <span className="text-muted-foreground ml-auto text-xs">{g.minuto}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Ações do dia */}
-      <div className="px-4 pb-5 flex gap-2">
-        <button
-          onClick={onEncerrarDia}
-          className="flex-1 py-2.5 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide"
-          style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}
-        >
-          Encerrar Dia de Jogo
-        </button>
-        <button
-          onClick={onAnularDia}
-          className="py-2.5 px-4 rounded-xl font-barlow-condensed text-sm tracking-wide border"
-          style={{ borderColor: '#333', color: '#555', background: 'transparent' }}
-        >
-          Anular Dia
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ─── Sub-view: Partida em Andamento ─────────────────────────────────────────
-
-function PartidaEmAndamento({
-  timeA,
-  timeB,
-  timeEspera,
-  vitorias,
-  historicoDia,
-  onEncerrar,
-  onAnular,
-  onGol,
-}: {
-  timeA: TimeInfo
-  timeB: TimeInfo
-  timeEspera: TimeInfo | undefined
-  vitorias: Vitorias
-  historicoDia: GolEntry[]
-  onEncerrar: (golsA: number, golsB: number) => void
-  onAnular: () => void
-  onGol: (gol: GolEntry) => void
-}) {
-  const [matchStatus, setMatchStatus] = useState<MatchStatus>('aguardando_inicio')
-  const [inicioRodadaEm, setInicioRodadaEm] = useState<Date | null>(null)
-  const [acumuladoMs, setAcumuladoMs] = useState(0)
-  const [gols, setGols] = useState<GolEntry[]>([])
-  const [restanteMs, setRestanteMs] = useState(DURACAO_MS)
-  const [confirmReiniciar, setConfirmReiniciar] = useState(false)
-  const [golDialog, setGolDialog] = useState<{ equipe: 'A' | 'B'; golExistente: GolEntry | null } | null>(null)
-
-  const hexA = COR_HEX[timeA.cor]
-  const hexB = COR_HEX[timeB.cor]
-
-  useEffect(() => {
-    if (matchStatus !== 'em_andamento' || !inicioRodadaEm) return
-    function tick() {
-      const totalDecorrido = acumuladoMs + (Date.now() - inicioRodadaEm!.getTime())
-      setRestanteMs(Math.max(0, DURACAO_MS - totalDecorrido))
-    }
-    tick()
-    const id = setInterval(tick, 500)
-    return () => clearInterval(id)
-  }, [matchStatus, inicioRodadaEm, acumuladoMs])
-
-  const min = Math.floor(restanteMs / 60000)
-  const seg = Math.floor((restanteMs % 60000) / 1000)
-  const progresso = 1 - restanteMs / DURACAO_MS
-  const tempoEsgotado = restanteMs === 0
-  const deveEncerrar = tempoEsgotado
-  const golsA = gols.filter((g) => g.equipe === 'A').length
-  const golsB = gols.filter((g) => g.equipe === 'B').length
-
-  function handleIniciar() {
-    setInicioRodadaEm(new Date())
-    setMatchStatus('em_andamento')
-  }
-
-  function handlePausar() {
-    const decorrido = inicioRodadaEm ? Date.now() - inicioRodadaEm.getTime() : 0
-    setAcumuladoMs((a) => a + decorrido)
-    setInicioRodadaEm(null)
-    setMatchStatus('pausado')
-  }
-
-  function handleRetomar() {
-    setInicioRodadaEm(new Date())
-    setMatchStatus('em_andamento')
-  }
-
-  function handleReiniciarConfirmado() {
-    setMatchStatus('aguardando_inicio')
-    setInicioRodadaEm(null)
-    setAcumuladoMs(0)
-    setRestanteMs(DURACAO_MS)
-    setGols([])
-    setConfirmReiniciar(false)
-  }
-
-  function getMinuto(): string {
-    const totalDecorrido = inicioRodadaEm
-      ? acumuladoMs + (Date.now() - inicioRodadaEm.getTime())
-      : acumuladoMs
-    const m = Math.floor(totalDecorrido / 60000)
-    const s = Math.floor((totalDecorrido % 60000) / 1000)
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-  }
-
-  function handleSalvarGol(equipe: 'A' | 'B', dados: Omit<GolEntry, 'id' | 'minuto'>, golExistente: GolEntry | null) {
-    const minuto = golExistente ? golExistente.minuto : getMinuto()
-    if (golExistente) {
-      const updated = { ...golExistente, ...dados, minuto }
-      setGols((prev) => prev.map((g) => g.id === golExistente.id ? updated : g))
-      onGol(updated)
-    } else {
-      const novo: GolEntry = { ...dados, id: `${Date.now()}`, minuto }
-      setGols((prev) => [novo, ...prev])
-      onGol(novo)
-    }
-  }
-
-  function handleExcluirGol(id: string) {
-    setGols((prev) => prev.filter((g) => g.id !== id))
-  }
-
-  return (
-    <div className="space-y-0">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: '#1e1e1e', background: '#0a0a0a' }}>
-        <div className="flex items-center gap-2">
-          <PulsingDot />
-          <span className="font-bebas tracking-widest text-lg" style={{ color: '#ef4444' }}>PARTIDA EM ANDAMENTO</span>
-        </div>
-        {timeEspera && (
-          <span className="font-barlow-condensed text-xs text-muted-foreground flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full" style={{ background: COR_HEX[timeEspera.cor] }} />
-            {timeEspera.nome} aguarda
-          </span>
-        )}
-      </div>
-
-      {/* Placar */}
-      <div className="px-4 pt-3 pb-2">
-        <div className="flex items-center gap-2">
-          <div className="flex-1 py-2.5 rounded-xl text-center font-bebas text-lg tracking-widest"
-            style={{ background: COR_BG[timeA.cor], color: hexA, border: `1px solid ${hexA}30` }}>
-            {timeA.nome}
-          </div>
-          <div className="flex-shrink-0 text-center px-1">
-            <div className="font-bebas text-4xl tracking-widest tabular-nums">
-              {golsA} <span className="text-muted-foreground">:</span> {golsB}
-            </div>
-          </div>
-          <div className="flex-1 py-2.5 rounded-xl text-center font-bebas text-lg tracking-widest"
-            style={{ background: COR_BG[timeB.cor], color: hexB, border: `1px solid ${hexB}30` }}>
-            {timeB.nome}
-          </div>
-        </div>
-      </div>
-
-      {/* Cronômetro */}
-      <div className="mx-4 mb-3 rounded-xl px-4 py-2.5 text-center space-y-1.5" style={{ background: '#141414', border: '1px solid #222' }}>
-        <div className="font-bebas text-4xl tracking-widest tabular-nums"
-          style={{ color: tempoEsgotado ? '#f87171' : '#f0ede0' }}>
-          {String(min).padStart(2, '0')}:{String(seg).padStart(2, '0')}
-        </div>
-        {matchStatus === 'em_andamento' && (
-          <div className="w-full h-1.5 rounded-full overflow-hidden mx-auto max-w-xs" style={{ background: '#2a2a2a' }}>
-            <div className="h-full rounded-full transition-all duration-500"
-              style={{ width: `${progresso * 100}%`, background: tempoEsgotado ? '#f87171' : '#f5c400' }} />
-          </div>
-        )}
-        <div className="font-barlow-condensed text-sm text-muted-foreground">
-          {matchStatus === 'aguardando_inicio' && 'Aguardando início'}
-          {matchStatus === 'pausado' && <span style={{ color: '#f5c400' }}>⏸ Pausado</span>}
-          {matchStatus === 'em_andamento' && !deveEncerrar && 'Em andamento'}
-          {matchStatus === 'em_andamento' && deveEncerrar && (
-            <span style={{ color: '#f87171' }}>Tempo esgotado!</span>
-          )}
-        </div>
-
-        {confirmReiniciar ? (
-          <div className="space-y-2">
-            <p className="font-barlow-condensed text-sm text-foreground">
-              Reiniciar vai zerar placar e cronômetro. Confirmar?
-            </p>
-            <div className="flex items-center justify-center gap-2">
-              <button onClick={handleReiniciarConfirmado}
-                className="px-4 py-1.5 rounded-lg font-barlow-condensed text-sm font-bold tracking-wide"
-                style={{ background: '#ef4444', color: '#fff' }}>
-                Sim, reiniciar
-              </button>
-              <button onClick={() => setConfirmReiniciar(false)}
-                className="px-4 py-1.5 rounded-lg font-barlow-condensed text-sm tracking-wide border"
-                style={{ borderColor: '#333', color: '#888' }}>
-                Cancelar
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center justify-center gap-2">
-            {matchStatus === 'aguardando_inicio' && (
-              <button onClick={handleIniciar}
-                className="flex items-center gap-1.5 px-5 py-2 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide"
-                style={{ background: '#f5c400', color: '#000' }}>
-                <Play size={14} strokeWidth={2.5} /> Iniciar
-              </button>
-            )}
-            {matchStatus === 'em_andamento' && !deveEncerrar && (
-              <button onClick={handlePausar}
-                className="flex items-center gap-1.5 px-5 py-2 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide border"
-                style={{ borderColor: '#f5c400', color: '#f5c400', background: 'transparent' }}>
-                <Pause size={14} strokeWidth={2.5} /> Pausar
-              </button>
-            )}
-            {matchStatus === 'pausado' && (
-              <button onClick={handleRetomar}
-                className="flex items-center gap-1.5 px-5 py-2 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide"
-                style={{ background: '#f5c400', color: '#000' }}>
-                <Play size={14} strokeWidth={2.5} /> Retomar
-              </button>
-            )}
-            {matchStatus !== 'aguardando_inicio' && (
-              <button onClick={() => setConfirmReiniciar(true)}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-barlow-condensed text-sm tracking-wide border"
-                style={{ borderColor: '#333', color: '#888', background: 'transparent' }}>
-                <RotateCcw size={13} /> Reiniciar
-              </button>
-            )}
-            {matchStatus === 'aguardando_inicio' && (
-              <button onClick={onAnular}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-barlow-condensed text-sm tracking-wide border"
-                style={{ borderColor: '#333', color: '#888', background: 'transparent' }}>
-                Voltar
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Botões de gol */}
-      <div className="px-4 py-2 mb-5 grid grid-cols-2 gap-2">
-        <button onClick={() => setGolDialog({ equipe: 'A', golExistente: null })}
-          disabled={matchStatus !== 'em_andamento'}
-          className="flex items-center justify-center gap-2 py-3 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide transition-all disabled:opacity-35"
-          style={{ background: COR_BG[timeA.cor], color: hexA, border: `1px solid ${hexA}40` }}>
-          <CirclePlus size={18} /> Gol {timeA.nome}
-        </button>
-        <button onClick={() => setGolDialog({ equipe: 'B', golExistente: null })}
-          disabled={matchStatus !== 'em_andamento'}
-          className="flex items-center justify-center gap-2 py-3 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide transition-all disabled:opacity-35"
-          style={{ background: COR_BG[timeB.cor], color: hexB, border: `1px solid ${hexB}40` }}>
-          <CirclePlus size={18} /> Gol {timeB.nome}
-        </button>
-        {matchStatus === 'pausado' && (
-          <div className="col-span-2 text-center font-barlow-condensed text-xs text-muted-foreground py-1">
-            Retome a partida para marcar gols
-          </div>
-        )}
-      </div>
-
-      {/* Histórico de gols */}
-      <div className="px-4 py-2 mb-3">
-        <div className="rounded-xl px-4 py-2" style={{ background: '#141414', border: '1px solid #222' }}>
-          <div className="font-barlow-condensed text-[10px] tracking-widest uppercase text-muted-foreground mb-1.5">
-            Histórico de Gols do Dia
-          </div>
-          {gols.length === 0 && historicoDia.length === 0 ? (
-            <div className="font-barlow-condensed text-sm text-muted-foreground text-center py-1 italic">
-              Nenhum gol marcado ainda
-            </div>
-          ) : (
-            <div className="space-y-1 max-h-48 overflow-y-auto">
-              {gols.map((g) => (
-                <div key={g.id} className="flex items-center gap-2 font-barlow-condensed text-sm">
-                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: COR_HEX[g.cor] }} />
-                  <div className="flex-1 min-w-0">
-                    <span style={{ color: COR_HEX[g.cor] }}>{g.jogadorNome}</span>
-                    {g.contra && <span className="text-xs text-muted-foreground ml-1">(contra)</span>}
-                    {g.assistNome && <span className="text-xs text-muted-foreground ml-1">· ass: {g.assistNome}</span>}
-                  </div>
-                  <span className="text-muted-foreground text-xs flex-shrink-0">{g.minuto}</span>
-                  <div className="flex items-center gap-2 ml-1">
-                    <button
-                      onClick={() => setGolDialog({ equipe: g.equipe, golExistente: g })}
-                      className="p-1 rounded"
-                      title="Editar gol"
-                    >
-                      <Pencil size={13} className="text-muted-foreground hover:text-foreground" />
-                    </button>
-                    <button
-                      onClick={() => handleExcluirGol(g.id)}
-                      className="p-1 rounded"
-                      title="Excluir gol"
-                    >
-                      <Trash2 size={13} className="text-muted-foreground hover:text-destructive" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-              {historicoDia.map((g, i) => (
-                <div key={`hist-${i}`} className="flex items-center gap-2 font-barlow-condensed text-sm opacity-50">
-                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: COR_HEX[g.cor] }} />
-                  <span style={{ color: COR_HEX[g.cor] }}>{g.jogadorNome}</span>
-                  <span className="text-muted-foreground ml-auto text-xs">{g.minuto}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Vitórias do dia */}
-      <div className="px-4 py-2 mb-3 grid grid-cols-3 gap-2">
-        {[timeA, timeB, ...(timeEspera ? [timeEspera] : [])].map((t) => {
-          const hex = COR_HEX[t.cor]
+    <div className="space-y-4 pt-2">
+      <p className="font-barlow-condensed text-xs tracking-widest uppercase text-muted-foreground">Placar do dia</p>
+      <div className="grid grid-cols-3 gap-2">
+        {times.map((t) => {
+          const hex = COR_HEX[t.cor as CorTime] ?? '#888'
           return (
-            <div key={t.id} className="rounded-xl py-1.5 text-center" style={{ background: '#141414', border: '1px solid #222' }}>
-              <div className="font-barlow-condensed text-[10px] text-muted-foreground truncate px-1 capitalize">{t.nome}</div>
-              <div className="font-bebas text-2xl leading-tight" style={{ color: hex }}>{vitorias[t.id] ?? 0}</div>
-              <div className="font-barlow-condensed text-[9px] text-muted-foreground tracking-wide">vitórias</div>
+            <div key={t.id} className="rounded-xl py-3 text-center" style={{ background: '#141414', border: '1px solid #222' }}>
+              <div className="font-barlow-condensed text-xs text-muted-foreground capitalize truncate px-2">{t.nome}</div>
+              <div className="font-bebas text-4xl" style={{ color: hex }}>{victories[t.id] ?? 0}</div>
+              <div className="font-barlow-condensed text-[10px] text-muted-foreground">vitórias</div>
             </div>
           )
         })}
       </div>
-
-      {/* Encerrar / Anular Partida */}
-      <div className="px-4 pb-3 flex gap-2">
-        <button onClick={() => onEncerrar(golsA, golsB)}
-          className="flex-1 py-2.5 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide"
-          style={{ background: '#3b82f6', color: '#fff' }}>
-          Encerrar Partida
-        </button>
-        <button onClick={onAnular}
-          className="flex-1 py-2.5 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide"
-          style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}>
-          Anular Partida
-        </button>
-      </div>
-
-      {golDialog && (
-        <GolDialog
-          open={!!golDialog}
-          onOpenChange={(v) => { if (!v) setGolDialog(null) }}
-          equipe={golDialog.equipe}
-          timeA={timeA}
-          timeB={timeB}
-          minuto={getMinuto()}
-          golExistente={golDialog.golExistente}
-          onSalvar={(dados) => handleSalvarGol(golDialog.equipe, dados, golDialog.golExistente)}
-          onExcluir={golDialog.golExistente ? () => handleExcluirGol(golDialog.golExistente!.id) : undefined}
-        />
+      {jogadores.length > 0 && (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-xl p-3 space-y-2" style={{ background: '#141414', border: '1px solid #222' }}>
+            <div className="font-barlow-condensed text-[10px] tracking-widest uppercase text-muted-foreground mb-1">Artilheiros</div>
+            {jogadores.filter((j) => j.gols > 0).slice(0, 5).map((j, i) => (
+              <div key={i} className="flex items-center gap-1.5 font-barlow-condensed text-xs">
+                <span className="text-muted-foreground w-3">{i + 1}</span>
+                <span className="flex-1 text-foreground truncate">{j.nome}</span>
+                <span style={{ color: '#f5c400', fontWeight: 600 }}>{j.gols}⚽</span>
+              </div>
+            ))}
+            {jogadores.filter((j) => j.gols > 0).length === 0 && (
+              <p className="font-barlow-condensed text-xs text-muted-foreground">Nenhum gol ainda</p>
+            )}
+          </div>
+          <div className="rounded-xl p-3 space-y-2" style={{ background: '#141414', border: '1px solid #222' }}>
+            <div className="font-barlow-condensed text-[10px] tracking-widest uppercase text-muted-foreground mb-1">Assistências</div>
+            {jogadores.filter((j) => j.assists > 0).slice(0, 5).map((j, i) => (
+              <div key={i} className="flex items-center gap-1.5 font-barlow-condensed text-xs">
+                <span className="text-muted-foreground w-3">{i + 1}</span>
+                <span className="flex-1 text-foreground truncate">{j.nome}</span>
+                <span style={{ color: '#3b82f6', fontWeight: 600 }}>{j.assists}🎯</span>
+              </div>
+            ))}
+            {jogadores.filter((j) => j.assists > 0).length === 0 && (
+              <p className="font-barlow-condensed text-xs text-muted-foreground">Nenhuma</p>
+            )}
+          </div>
+        </div>
+      )}
+      {finished.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="font-barlow-condensed text-[10px] tracking-widest uppercase text-muted-foreground">Histórico</div>
+          {finished.map((p, i) => {
+            const golsA = p.gols.filter((g) => g.timeId === p.timeAId).length
+            const golsB = p.gols.filter((g) => g.timeId === p.timeBId).length
+            const hexA = COR_HEX[p.timeACor as CorTime] ?? '#888'
+            const hexB = COR_HEX[p.timeBCor as CorTime] ?? '#888'
+            const vHex = p.vencedorId ? (p.vencedorId === p.timeAId ? hexA : hexB) : '#555'
+            return (
+              <div key={p.id} className="flex items-center gap-2 px-3 py-2 rounded-lg font-barlow-condensed text-xs"
+                style={{ background: '#141414' }}>
+                <span className="text-muted-foreground w-5">P{i + 1}</span>
+                <span style={{ color: hexA }}>{p.timeANome}</span>
+                <span className="font-bebas text-sm tracking-widest">{golsA}×{golsB}</span>
+                <span style={{ color: hexB }}>{p.timeBNome}</span>
+                <span className="ml-auto" style={{ color: vHex }}>{p.vencedorId ? '✓' : 'empate'}</span>
+              </div>
+            )
+          })}
+        </div>
       )}
     </div>
   )
 }
 
-// ─── Componente principal ────────────────────────────────────────────────────
+// ─── Componente principal ─────────────────────────────────────────────────────
 
-export function AoVivo({ initialData }: { initialData: DashboardData }) {
-  const { data } = useSWR<DashboardData>('/api/dashboard', fetcher, {
-    refreshInterval: 5000,
-    fallbackData: initialData,
+export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
+  const router = useRouter()
+
+  const [phase, setPhase] = useState<GamePhase>(() => derivePhase(partidas, times))
+  const [localGols, setLocalGols] = useState<GolData[]>(() => {
+    const last = partidas[partidas.length - 1]
+    return last?.status === 'EM_ANDAMENTO' ? last.gols : []
   })
+  const [golDialog, setGolDialog] = useState<{ equipe: 'A' | 'B' } | null>(null)
+  const [savingGol, setSavingGol] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [confirmAnular, setConfirmAnular] = useState(false)
 
-  const dia = data?.diaAtivo
-  const stats = data?.stats
-
-  type View = 'configurar' | 'partida'
-  const [view, setView] = useState<View>('configurar')
-  const [timeAId, setTimeAId] = useState<number | null>(null)
-  const [timeBId, setTimeBId] = useState<number | null>(null)
-  const [vitorias, setVitorias] = useState<Vitorias>({})
-  const [historicoDia, setHistoricoDia] = useState<GolEntry[]>([])
-  const [rodadasJogadas, setRodadasJogadas] = useState<Record<number, number>>({})
-  const [empateDialog, setEmpateDialog] = useState<{ timeA: TimeInfo; timeB: TimeInfo } | null>(null)
-  const [encerrarDiaOpen, setEncerrarDiaOpen] = useState(false)
-  const [anularDiaOpen, setAnularDiaOpen] = useState(false)
-  const [diaFinalizado, setDiaFinalizado] = useState(false)
+  // ── Timer (client-side, nunca auto-start) ──
+  type TimerState = 'parado' | 'rodando' | 'pausado'
+  const [timerState, setTimerState] = useState<TimerState>('parado')
+  const [inicioRodadaEm, setInicioRodadaEm] = useState<Date | null>(null)
+  const [acumuladoMs, setAcumuladoMs] = useState(0)
+  const [restanteMs, setRestanteMs] = useState(DURACAO_MS)
 
   useEffect(() => {
-    if (dia?.times && Object.keys(vitorias).length === 0) {
-      const v: Vitorias = {}
-      dia.times.forEach((t) => { v[t.id] = 0 })
-      setVitorias(v)
+    if (timerState !== 'rodando' || !inicioRodadaEm) return
+    const update = () => {
+      const dec = Date.now() - inicioRodadaEm.getTime()
+      setRestanteMs(Math.max(0, DURACAO_MS - acumuladoMs - dec))
     }
-  }, [dia?.times])
+    update()
+    const id = setInterval(update, 500)
+    return () => clearInterval(id)
+  }, [timerState, inicioRodadaEm, acumuladoMs])
 
-  if (!dia) return null
+  const timerMin = Math.floor(restanteMs / 60000)
+  const timerSeg = Math.floor((restanteMs % 60000) / 1000)
+  const timerDisplay = `${String(timerMin).padStart(2, '0')}:${String(timerSeg).padStart(2, '0')}`
+  const timerEsgotado = restanteMs === 0
 
-  const timeA = dia.times.find((t) => t.id === timeAId)
-  const timeB = dia.times.find((t) => t.id === timeBId)
-  const timeEspera = dia.times.find((t) => t.id !== timeAId && t.id !== timeBId)
-
-  function handleConfirmarConfronto(idA: number, idB: number) {
-    setTimeAId(idA)
-    setTimeBId(idB)
-    setView('partida')
+  function patchTimer(inicioEm: string | null, timerAcumuladoMs: number) {
+    if (phase.type !== 'jogando') return
+    fetch(`/api/dias-de-jogo/${diaId}/partidas/${phase.partidaId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'timer', inicioEm, timerAcumuladoMs }),
+    }).catch(() => toast.error('Erro ao salvar cronômetro'))
   }
 
-  function handleGol(gol: GolEntry) {
-    setHistoricoDia((h) => [gol, ...h])
+  function timerIniciar() {
+    const agora = new Date()
+    setInicioRodadaEm(agora)
+    setTimerState('rodando')
+    patchTimer(agora.toISOString(), acumuladoMs)
+  }
+  function timerPausar() {
+    const novoAcumulado = inicioRodadaEm ? acumuladoMs + (Date.now() - inicioRodadaEm.getTime()) : acumuladoMs
+    setAcumuladoMs(novoAcumulado)
+    setInicioRodadaEm(null)
+    setTimerState('pausado')
+    patchTimer(null, novoAcumulado)
+  }
+  function timerReiniciar() {
+    setInicioRodadaEm(null); setAcumuladoMs(0); setRestanteMs(DURACAO_MS); setTimerState('parado')
+    patchTimer(null, 0)
   }
 
-  function handleEncerrar(golsA: number, golsB: number) {
-    if (!timeA || !timeB) return
-
-    if (golsA > golsB) setVitorias((v) => ({ ...v, [timeA.id]: (v[timeA.id] ?? 0) + 1 }))
-    else if (golsB > golsA) setVitorias((v) => ({ ...v, [timeB.id]: (v[timeB.id] ?? 0) + 1 }))
-
-    const novasRodadas = {
-      ...rodadasJogadas,
-      [timeA.id]: (rodadasJogadas[timeA.id] ?? 0) + 1,
-      [timeB.id]: (rodadasJogadas[timeB.id] ?? 0) + 1,
-    }
-    setRodadasJogadas(novasRodadas)
-    setView('configurar')
-
-    if (golsA === golsB) {
-      const rodadasA = novasRodadas[timeA.id] ?? 0
-      const rodadasB = novasRodadas[timeB.id] ?? 0
-      if (rodadasA === rodadasB) {
-        // Primeiro confronto do dia ou rodadas iguais — humanos decidem quem fica
-        setEmpateDialog({ timeA, timeB })
+  // ── Re-sincroniza fase quando dados do servidor mudam ──
+  const lastId = partidas[partidas.length - 1]?.id ?? 0
+  const lastStatus = partidas[partidas.length - 1]?.status ?? ''
+  useEffect(() => {
+    const newPhase = derivePhase(partidas, times)
+    setPhase(newPhase)
+    if (newPhase.type === 'jogando') {
+      const last = partidas[partidas.length - 1]
+      if (last) {
+        setLocalGols(last.gols)
+        const acumulado = last.timerAcumuladoMs ?? 0
+        const inicioFromServer = last.inicioEm ? new Date(last.inicioEm) : null
+        if (inicioFromServer) {
+          setInicioRodadaEm(inicioFromServer)
+          setAcumuladoMs(acumulado)
+          setTimerState('rodando')
+        } else if (acumulado > 0) {
+          setInicioRodadaEm(null)
+          setAcumuladoMs(acumulado)
+          setRestanteMs(Math.max(0, DURACAO_MS - acumulado))
+          setTimerState('pausado')
+        } else {
+          setInicioRodadaEm(null); setAcumuladoMs(0); setRestanteMs(DURACAO_MS); setTimerState('parado')
+        }
       }
-      // Se rodadas diferentes, o time com mais rodadas sai — automático
+    } else {
+      setLocalGols([])
+      setInicioRodadaEm(null); setAcumuladoMs(0); setRestanteMs(DURACAO_MS); setTimerState('parado')
     }
+  }, [lastId, lastStatus, partidas.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const stats = computeStats(partidas, times, phase.type === 'jogando' ? localGols : [])
+
+  const golsA = phase.type === 'jogando' ? localGols.filter((g) => g.timeId === phase.timeAId).length : 0
+  const golsB = phase.type === 'jogando' ? localGols.filter((g) => g.timeId === phase.timeBId).length : 0
+
+  // ── Handlers ──
+
+  async function handleConfirmarPartida(timeAId: number, timeBId: number) {
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/dias-de-jogo/${diaId}/partidas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timeAId, timeBId, iniciar: true }),
+      })
+      if (!res.ok) { toast.error((await res.json()).error ?? 'Erro ao criar partida'); return }
+      toast.success('Partida criada — clique Iniciar para começar o cronômetro')
+      timerReiniciar()
+      router.refresh()
+    } finally { setBusy(false) }
   }
 
-  function handleAnular() {
-    setView('configurar')
+  async function handleGolConfirm(jogadorId: number, assistId: number | null) {
+    if (phase.type !== 'jogando' || !golDialog) return
+    const timeId = golDialog.equipe === 'A' ? phase.timeAId : phase.timeBId
+    setSavingGol(true)
+    try {
+      const res = await fetch(`/api/dias-de-jogo/${diaId}/partidas/${phase.partidaId}/gols`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jogadorId, timeId, assistenciaJogadorId: assistId }),
+      })
+      if (!res.ok) { toast.error((await res.json()).error ?? 'Erro ao marcar gol'); return }
+      const body = await res.json()
+      setLocalGols((prev) => [...prev, {
+        id: body.id, timeId, jogadorId, jogadorNome: body.jogadorNome,
+        assistenciaJogadorId: assistId, assistenciaJogadorNome: body.assistenciaNome ?? null,
+      }])
+      setGolDialog(null)
+      toast.success(`Gol de ${body.jogadorNome}!${body.assistenciaNome ? ` Assist.: ${body.assistenciaNome}` : ''}`)
+    } finally { setSavingGol(false) }
   }
 
-  function handleEncerrarDia() {
-    setDiaFinalizado(true)
-    setEncerrarDiaOpen(false)
+  async function handleEncerrarPartida() {
+    if (phase.type !== 'jogando') return
+    const vencedorId = golsA > golsB ? phase.timeAId : golsB > golsA ? phase.timeBId : null
+    if (timerState === 'rodando') timerPausar()
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/dias-de-jogo/${diaId}/partidas/${phase.partidaId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'FINALIZADA', vencedorId }),
+      })
+      if (!res.ok) { toast.error((await res.json()).error ?? 'Erro ao encerrar partida'); return }
+      router.refresh()
+    } finally { setBusy(false) }
   }
 
-  function handleAnularDia() {
-    const v: Vitorias = {}
-    dia.times.forEach((t) => { v[t.id] = 0 })
-    setVitorias(v)
-    setHistoricoDia([])
-    setRodadasJogadas({})
-    setView('configurar')
-    setAnularDiaOpen(false)
+  async function handleEncerrarDia() {
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/dias-de-jogo/${diaId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'FINALIZADO' }),
+      })
+      if (!res.ok) { toast.error((await res.json()).error ?? 'Erro'); return }
+      toast.success('Dia de jogo encerrado')
+      router.push('/dias-de-jogo')
+    } finally { setBusy(false) }
   }
 
-  // ─── Dia Finalizado ───────────────────────────────────────────────────────
-
-  if (diaFinalizado) {
-    const timesOrdenados = [...dia.times].sort((a, b) => (vitorias[b.id] ?? 0) - (vitorias[a.id] ?? 0))
-    const lider = timesOrdenados[0]
-    const temVencedor = (vitorias[lider.id] ?? 0) > (vitorias[timesOrdenados[1].id] ?? 0)
-    return (
-      <div className="rounded-2xl border overflow-hidden" style={{ background: '#0e0e0e', borderColor: '#2a2a2a' }}>
-        <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: '#1e1e1e', background: '#0a0a0a' }}>
-          <div className="flex items-center gap-2">
-            <Trophy size={15} style={{ color: '#f5c400' }} />
-            <span className="font-bebas tracking-widest text-lg" style={{ color: '#f5c400' }}>
-              DIA DE JOGO ENCERRADO
-            </span>
-          </div>
-          <Link href={`/dias-de-jogo/${dia.id}`} className="flex items-center gap-1 font-barlow-condensed text-xs tracking-wide text-muted-foreground hover:text-foreground transition-colors">
-            Ver dia <ArrowRight size={12} />
-          </Link>
-        </div>
-        <div className="px-4 py-5 space-y-2">
-          {timesOrdenados.map((t, i) => {
-            const hex = COR_HEX[t.cor]
-            const v = vitorias[t.id] ?? 0
-            const ehLider = i === 0 && temVencedor
-            return (
-              <div key={t.id} className="flex items-center gap-3 rounded-xl px-4 py-3"
-                style={{ background: '#141414', border: `1px solid ${ehLider ? hex + '40' : '#222'}` }}>
-                <span className="font-bebas text-xl w-5 text-center" style={{ color: ehLider ? '#f5c400' : '#444' }}>
-                  {i + 1}
-                </span>
-                <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: hex }} />
-                <span className="font-barlow-condensed text-sm flex-1" style={{ color: hex }}>{t.nome}</span>
-                <span className="font-bebas text-2xl" style={{ color: ehLider ? '#f5c400' : '#888' }}>{v}</span>
-                <span className="font-barlow-condensed text-xs text-muted-foreground">vitórias</span>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-    )
+  async function handleAnular() {
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/dias-de-jogo/${diaId}/anular`, { method: 'POST' })
+      if (!res.ok) { toast.error((await res.json()).error ?? 'Erro'); return }
+      toast.success('Dia anulado — esquema disponível para edição')
+      router.refresh()
+      router.push(`/dias-de-jogo/${diaId}`)
+    } finally { setBusy(false); setConfirmAnular(false) }
   }
 
-  // ─── View principal ───────────────────────────────────────────────────────
+  const getTime = (id: number) => times.find((t) => t.id === id)!
+
+  // ── Render ──
 
   return (
-    <div className="rounded-2xl border overflow-hidden" style={{ background: '#0e0e0e', borderColor: '#2a2a2a' }}>
-      {view === 'configurar' ? (
-        <ConfigurarPartida
-          times={dia.times}
-          vitorias={vitorias}
-          historicoDia={historicoDia}
-          diaId={dia.id}
-          dataStr={dia.data}
-          onConfirmar={handleConfirmarConfronto}
-          onEncerrarDia={() => setEncerrarDiaOpen(true)}
-          onAnularDia={() => setAnularDiaOpen(true)}
-        />
-      ) : timeA && timeB ? (
-        <PartidaEmAndamento
-          timeA={timeA}
-          timeB={timeB}
-          timeEspera={timeEspera}
-          vitorias={vitorias}
-          historicoDia={historicoDia}
-          onEncerrar={handleEncerrar}
-          onAnular={handleAnular}
-          onGol={handleGol}
-        />
-      ) : null}
+    <div className="space-y-5">
 
-      {/* Stats do ciclo */}
-      {stats && (stats.artilheiro || stats.liderPasse || stats.liderFoto) && (
-        <div className="px-4 pb-4 pt-1 grid grid-cols-3 gap-2 border-t" style={{ borderColor: '#1e1e1e' }}>
-          {[
-            { label: 'Artilharia', stat: stats.artilheiro, sufixo: 'g' },
-            { label: 'Passes',     stat: stats.liderPasse, sufixo: 'a' },
-            { label: 'Fotos',      stat: stats.liderFoto,  sufixo: 'v' },
-          ].map(({ label, stat, sufixo }) => stat && (
-            <div key={label} className="rounded-xl py-2 px-2 text-center mt-3" style={{ background: '#0a0a0a', border: '1px solid #1e1e1e' }}>
-              <div className="font-barlow-condensed text-[10px] tracking-widest uppercase text-muted-foreground">{label}</div>
-              <div className="font-barlow-condensed text-xs font-semibold text-foreground truncate mt-0.5">{stat.nome}</div>
-              <div className="font-bebas text-xl leading-tight" style={{ color: '#f5c400' }}>{stat.valor}{sufixo}</div>
+      {/* ── PRONTO ── */}
+      {phase.type === 'pronto' && (
+        <>
+          <div className="flex items-center gap-2 px-4 py-3 rounded-xl"
+            style={{ background: '#0f1a0f', border: '1px solid rgba(34,197,94,0.2)' }}>
+            <div className="w-2 h-2 rounded-full" style={{ background: '#22c55e' }} />
+            <span className="font-barlow-condensed text-sm tracking-wide" style={{ color: '#22c55e' }}>
+              Tudo pronto para começar
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {times.map((t) => <TimeCard key={t.id} time={t} />)}
+          </div>
+
+          <div className="space-y-3">
+            <button onClick={() => setPhase({ type: 'configurando' })} disabled={busy}
+              className="w-full py-4 rounded-xl font-bebas text-2xl tracking-widest disabled:opacity-40"
+              style={{ background: '#f5c400', color: '#000' }}>
+              INICIAR JOGO
+            </button>
+            <div className="flex gap-2">
+              <button onClick={handleEncerrarDia} disabled={busy}
+                className="flex-1 py-2.5 rounded-xl font-barlow-condensed text-sm tracking-wide"
+                style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>
+                <CheckCircle2 size={14} className="inline mr-1.5" />Encerrar Dia
+              </button>
+              <button onClick={() => setConfirmAnular(true)} disabled={busy}
+                className="px-5 py-2.5 rounded-xl font-barlow-condensed text-sm tracking-wide border"
+                style={{ borderColor: '#333', color: '#666', background: 'transparent' }}>
+                <XCircle size={14} className="inline mr-1.5" />Anular
+              </button>
             </div>
-          ))}
+          </div>
+        </>
+      )}
+
+      {/* ── CONFIGURANDO ── */}
+      {phase.type === 'configurando' && (
+        <SelecaoPartida
+          times={times}
+          isFirst={partidas.length === 0}
+          onConfirmar={handleConfirmarPartida}
+          onCancelar={() => setPhase(derivePhase(partidas, times))}
+          busy={busy}
+        />
+      )}
+
+      {/* ── JOGANDO ── */}
+      {phase.type === 'jogando' && (() => {
+        const timeA = getTime(phase.timeAId)
+        const timeB = getTime(phase.timeBId)
+        const timeEspera = getTime(phase.waitingTeamId)
+        const hexA = COR_HEX[timeA.cor as CorTime] ?? '#888'
+        const hexB = COR_HEX[timeB.cor as CorTime] ?? '#888'
+        const bgA = COR_BG[timeA.cor as CorTime] ?? 'rgba(128,128,128,0.12)'
+        const bgB = COR_BG[timeB.cor as CorTime] ?? 'rgba(128,128,128,0.12)'
+
+        return (
+          <div className="rounded-xl border overflow-hidden" style={{ borderColor: '#242424', background: '#111' }}>
+            {/* Header */}
+            <div className="px-4 py-2.5 flex items-center justify-between border-b" style={{ borderColor: '#1e1e1e', background: '#0a0a0a' }}>
+              <div className="flex items-center gap-2">
+                <span className="relative flex w-2 h-2">
+                  <span className="absolute inline-flex w-full h-full rounded-full opacity-75 animate-ping" style={{ background: '#ef4444' }} />
+                  <span className="relative inline-flex w-2 h-2 rounded-full" style={{ background: '#ef4444' }} />
+                </span>
+                <span className="font-bebas tracking-widest" style={{ color: '#f5c400' }}>PARTIDA {partidas.length}</span>
+              </div>
+              {timeEspera && (
+                <span className="font-barlow-condensed text-xs text-muted-foreground flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full" style={{ background: COR_HEX[timeEspera.cor as CorTime] ?? '#888' }} />
+                  {timeEspera.nome} aguarda
+                </span>
+              )}
+            </div>
+
+            {/* Placar + cronômetro */}
+            <div className="px-4 pt-4 pb-2">
+              <div className="flex items-center gap-3">
+                {/* Time A */}
+                <div className="flex-1 rounded-xl py-3 text-center" style={{ background: bgA, border: `1px solid ${hexA}30` }}>
+                  <div className="font-bebas tracking-widest text-lg leading-none" style={{ color: hexA }}>{timeA.nome}</div>
+                  <div className="font-bebas text-6xl tabular-nums mt-1 leading-none" style={{ color: hexA }}>{golsA}</div>
+                </div>
+
+                {/* Timer central */}
+                <div className="text-center flex-shrink-0 px-1 space-y-1.5" style={{ minWidth: 80 }}>
+                  <div className="font-bebas text-3xl tracking-widest tabular-nums"
+                    style={{ color: timerEsgotado ? '#ef4444' : timerState === 'parado' ? '#444' : '#f0ede0' }}>
+                    {timerDisplay}
+                  </div>
+
+                  {/* Controles do timer */}
+                  <div className="flex items-center justify-center gap-1">
+                    {timerState === 'parado' && (
+                      <button onClick={timerIniciar}
+                        className="flex items-center gap-0.5 px-2 py-1 rounded-md font-barlow-condensed text-[10px] font-bold tracking-wide"
+                        style={{ background: '#f5c400', color: '#000' }}>
+                        <Play size={8} fill="#000" /> iniciar
+                      </button>
+                    )}
+                    {timerState === 'rodando' && (
+                      <>
+                        <button onClick={timerPausar}
+                          className="p-1.5 rounded-md" style={{ background: '#222', color: '#f0ede0' }}>
+                          <Pause size={11} />
+                        </button>
+                        <button onClick={timerReiniciar}
+                          className="p-1.5 rounded-md" style={{ background: '#181818', color: '#555' }}>
+                          <RotateCcw size={10} />
+                        </button>
+                      </>
+                    )}
+                    {timerState === 'pausado' && (
+                      <>
+                        <button onClick={timerIniciar}
+                          className="flex items-center gap-0.5 px-1.5 py-1 rounded-md font-barlow-condensed text-[10px] font-bold"
+                          style={{ background: '#f5c400', color: '#000' }}>
+                          <Play size={8} fill="#000" /> retomar
+                        </button>
+                        <button onClick={timerReiniciar}
+                          className="p-1.5 rounded-md" style={{ background: '#181818', color: '#555' }}>
+                          <RotateCcw size={10} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="font-bebas text-lg text-muted-foreground">VS</div>
+                </div>
+
+                {/* Time B */}
+                <div className="flex-1 rounded-xl py-3 text-center" style={{ background: bgB, border: `1px solid ${hexB}30` }}>
+                  <div className="font-bebas tracking-widest text-lg leading-none" style={{ color: hexB }}>{timeB.nome}</div>
+                  <div className="font-bebas text-6xl tabular-nums mt-1 leading-none" style={{ color: hexB }}>{golsB}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Botões de gol */}
+            <div className="px-4 py-3 grid grid-cols-2 gap-3">
+              <button onClick={() => setGolDialog({ equipe: 'A' })} disabled={busy || savingGol}
+                className="py-4 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide disabled:opacity-40"
+                style={{ background: bgA, color: hexA, border: `1px solid ${hexA}40` }}>
+                + Gol {timeA.nome}
+              </button>
+              <button onClick={() => setGolDialog({ equipe: 'B' })} disabled={busy || savingGol}
+                className="py-4 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide disabled:opacity-40"
+                style={{ background: bgB, color: hexB, border: `1px solid ${hexB}40` }}>
+                + Gol {timeB.nome}
+              </button>
+            </div>
+
+            {/* Gols recentes */}
+            {localGols.length > 0 && (
+              <div className="px-4 pb-3">
+                <div className="rounded-xl px-3 py-2.5 space-y-1.5" style={{ background: '#0a0a0a' }}>
+                  <div className="font-barlow-condensed text-[10px] tracking-widest uppercase text-muted-foreground">Gols</div>
+                  {[...localGols].reverse().map((g, i) => {
+                    const hex = g.timeId === phase.timeAId ? hexA : hexB
+                    return (
+                      <div key={i} className="flex items-center gap-2 font-barlow-condensed text-xs">
+                        <div className="w-1.5 h-1.5 rounded-full" style={{ background: hex }} />
+                        <span style={{ color: hex }}>{g.jogadorNome}</span>
+                        {g.assistenciaJogadorNome && <span className="text-muted-foreground">→ {g.assistenciaJogadorNome}</span>}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Encerrar partida */}
+            <div className="px-4 pb-4">
+              <button onClick={handleEncerrarPartida} disabled={busy}
+                className="w-full py-2.5 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide disabled:opacity-40"
+                style={{ background: 'rgba(245,196,0,0.12)', color: '#f5c400', border: '1px solid rgba(245,196,0,0.25)' }}>
+                Encerrar Partida
+              </button>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── ENTRE PARTIDAS ── */}
+      {phase.type === 'entre_partidas' && (() => {
+        const vencedor = getTime(phase.vencedorId)
+        const perdedor = getTime(phase.perdedorId)
+        const proximo = getTime(phase.prevWaitingId)
+        const hexV = COR_HEX[vencedor.cor as CorTime] ?? '#888'
+        const hexP = COR_HEX[perdedor.cor as CorTime] ?? '#888'
+        const hexPr = COR_HEX[proximo.cor as CorTime] ?? '#888'
+        return (
+          <div className="rounded-xl border p-5 space-y-4" style={{ borderColor: '#242424', background: '#111' }}>
+            <div>
+              <div className="font-barlow-condensed text-xs tracking-widest uppercase text-muted-foreground">Resultado · Partida {partidas.length}</div>
+              <div className="font-bebas text-2xl tracking-wide mt-1">
+                <span style={{ color: hexV }}>{phase.golsA > phase.golsB ? phase.golsA : phase.golsB}</span>
+                <span className="text-muted-foreground mx-2">×</span>
+                <span style={{ color: hexP }}>{phase.golsA > phase.golsB ? phase.golsB : phase.golsA}</span>
+              </div>
+              <div className="flex items-center gap-1.5 mt-1">
+                <Trophy size={14} style={{ color: hexV }} />
+                <span className="font-barlow-condensed text-sm font-semibold" style={{ color: hexV }}>{vencedor.nome} vence!</span>
+              </div>
+            </div>
+            <div className="h-px" style={{ background: '#242424' }} />
+            <div>
+              <div className="font-barlow-condensed text-xs tracking-widest uppercase text-muted-foreground mb-2">Próxima Partida</div>
+              <div className="flex items-center gap-2 font-barlow-condensed text-sm flex-wrap">
+                <span style={{ color: hexV, fontWeight: 600 }}>{vencedor.nome}</span>
+                <span className="text-muted-foreground text-xs">fica</span>
+                <span className="font-bebas text-lg text-muted-foreground">VS</span>
+                <span style={{ color: hexPr, fontWeight: 600 }}>{proximo.nome}</span>
+                <span className="text-muted-foreground text-xs">entra</span>
+              </div>
+              <div className="font-barlow-condensed text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 rounded-full" style={{ background: hexP }} />{perdedor.nome} aguarda
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => handleConfirmarPartida(phase.vencedorId, phase.prevWaitingId)} disabled={busy}
+                className="flex-1 py-3 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide disabled:opacity-40"
+                style={{ background: '#f5c400', color: '#000' }}>
+                {busy ? 'Criando...' : 'Iniciar Próxima Partida'}
+              </button>
+              <button onClick={handleEncerrarDia} disabled={busy}
+                className="px-4 py-3 rounded-xl font-barlow-condensed text-sm tracking-wide"
+                style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>
+                Encerrar Dia
+              </button>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── EMPATE DECISÃO ── */}
+      {phase.type === 'empate_decisao' && (() => {
+        const timeA = getTime(phase.timeAId)
+        const timeB = getTime(phase.timeBId)
+        const timeEspera = getTime(phase.prevWaitingId)
+        return (
+          <div className="rounded-xl border p-5 space-y-4" style={{ borderColor: 'rgba(245,196,0,0.3)', background: '#111' }}>
+            <div>
+              <div className="font-bebas tracking-widest text-2xl" style={{ color: '#f5c400' }}>EMPATE!</div>
+              <p className="font-barlow-condensed text-sm text-muted-foreground mt-1">
+                Quem fica na quadra para enfrentar o{' '}
+                <span style={{ color: COR_HEX[timeEspera.cor as CorTime] ?? '#888' }}>{timeEspera.nome}</span>?
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {[timeA, timeB].map((t) => {
+                const hex = COR_HEX[t.cor as CorTime] ?? '#888'
+                return (
+                  <button key={t.id} onClick={() => handleConfirmarPartida(t.id, phase.prevWaitingId)} disabled={busy}
+                    className="py-4 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide disabled:opacity-40"
+                    style={{ background: `${hex}18`, color: hex, border: `1px solid ${hex}40` }}>
+                    {t.nome} fica
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── Stats ── */}
+      {partidas.length > 0 && (
+        <StatsDia partidas={partidas} times={times} victories={stats.victories} jogadores={stats.jogadores} />
+      )}
+
+      {/* ── Ações globais na fase jogando ── */}
+      {phase.type === 'jogando' && (
+        <div className="flex gap-2">
+          <button onClick={handleEncerrarDia} disabled={busy}
+            className="flex-1 py-2.5 rounded-xl font-barlow-condensed text-xs tracking-wide"
+            style={{ background: 'rgba(34,197,94,0.08)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.2)' }}>
+            Encerrar confronto
+          </button>
+          <button onClick={() => setConfirmAnular(true)} disabled={busy}
+            className="px-4 py-2.5 rounded-xl font-barlow-condensed text-xs tracking-wide border"
+            style={{ borderColor: '#2a2a2a', color: '#555', background: 'transparent' }}>
+            Anular confronto
+          </button>
         </div>
       )}
 
-      {/* Dialog: Empate — quem fica em campo? */}
-      <Dialog open={!!empateDialog} onOpenChange={(v) => { if (!v) setEmpateDialog(null) }}>
-        <DialogContent style={{ background: '#111111', border: '1px solid #242424' }}>
-          <DialogHeader>
-            <DialogTitle className="font-bebas tracking-widest text-2xl">Empate!</DialogTitle>
-          </DialogHeader>
-          {empateDialog && (
-            <div className="space-y-4 pt-1">
-              <p className="font-barlow-condensed text-sm text-muted-foreground">
-                Rodadas iguais — decidam quem fica em campo para o próximo confronto.
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setEmpateDialog(null)}
-                  className="flex-1 py-3 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide border-2"
-                  style={{
-                    borderColor: COR_HEX[empateDialog.timeA.cor],
-                    color: COR_HEX[empateDialog.timeA.cor],
-                    background: COR_BG[empateDialog.timeA.cor],
-                  }}
-                >
-                  {empateDialog.timeA.nome} fica
-                </button>
-                <button
-                  onClick={() => setEmpateDialog(null)}
-                  className="flex-1 py-3 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide border-2"
-                  style={{
-                    borderColor: COR_HEX[empateDialog.timeB.cor],
-                    color: COR_HEX[empateDialog.timeB.cor],
-                    background: COR_BG[empateDialog.timeB.cor],
-                  }}
-                >
-                  {empateDialog.timeB.nome} fica
-                </button>
-              </div>
-              <p className="font-barlow-condensed text-xs text-muted-foreground text-center">
-                Após decidir, configure o próximo confronto.
-              </p>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* ── GolModal ── */}
+      {phase.type === 'jogando' && golDialog && (() => {
+        const isA = golDialog.equipe === 'A'
+        const team = isA ? getTime(phase.timeAId) : getTime(phase.timeBId)
+        const other = isA ? getTime(phase.timeBId) : getTime(phase.timeAId)
+        return (
+          <GolModal open={!!golDialog} onClose={() => setGolDialog(null)}
+            teamName={team.nome} teamCor={team.cor}
+            teamPlayers={team.jogadores} otherPlayers={other.jogadores}
+            onConfirm={handleGolConfirm} saving={savingGol} />
+        )
+      })()}
 
-      {/* Dialog: Encerrar Dia de Jogo */}
-      <Dialog open={encerrarDiaOpen} onOpenChange={setEncerrarDiaOpen}>
+      {/* ── Confirmar Anular ── */}
+      <Dialog open={confirmAnular} onOpenChange={setConfirmAnular}>
         <DialogContent style={{ background: '#111111', border: '1px solid #242424' }}>
           <DialogHeader>
-            <DialogTitle className="font-bebas tracking-widest text-2xl">Encerrar Dia de Jogo</DialogTitle>
+            <DialogTitle className="font-bebas tracking-widest text-2xl flex items-center gap-2">
+              <AlertTriangle size={20} style={{ color: '#fb923c' }} />
+              Anular confronto
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-1">
-            <p className="font-barlow-condensed text-sm text-muted-foreground">Placar final do dia:</p>
-            <div className="space-y-2">
-              {[...dia.times]
-                .sort((a, b) => (vitorias[b.id] ?? 0) - (vitorias[a.id] ?? 0))
-                .map((t) => (
-                  <div key={t.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5" style={{ background: '#1a1a1a', border: '1px solid #333' }}>
-                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: COR_HEX[t.cor] }} />
-                    <span className="font-barlow-condensed text-sm flex-1" style={{ color: COR_HEX[t.cor] }}>{t.nome}</span>
-                    <span className="font-bebas text-xl" style={{ color: '#f5c400' }}>{vitorias[t.id] ?? 0}</span>
-                    <span className="font-barlow-condensed text-xs text-muted-foreground">vitórias</span>
-                  </div>
-                ))}
-            </div>
-            <div className="flex gap-2 pt-1">
-              <Button
-                onClick={handleEncerrarDia}
-                className="flex-1 font-barlow-condensed tracking-wide"
-                style={{ background: '#22c55e', color: '#000', border: 'none' }}
-              >
-                Confirmar Encerramento
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setEncerrarDiaOpen(false)}
-                className="font-barlow-condensed tracking-wide"
-                style={{ borderColor: '#444', color: '#888' }}
-              >
-                Cancelar
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog: Anular Dia de Jogo */}
-      <Dialog open={anularDiaOpen} onOpenChange={setAnularDiaOpen}>
-        <DialogContent style={{ background: '#111111', border: '1px solid #242424' }}>
-          <DialogHeader>
-            <DialogTitle className="font-bebas tracking-widest text-2xl">Anular Dia de Jogo</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 pt-1">
-            <p className="font-barlow-condensed text-sm text-muted-foreground">
-              Tem certeza? Todos os resultados do dia serão descartados e o placar zerado.
+            <p className="font-barlow-condensed text-sm leading-relaxed" style={{ color: '#f0ede0' }}>
+              Todas as partidas e gols serão excluídos. O esquema volta para edição.
             </p>
-            <div className="flex gap-2 pt-1">
-              <Button
-                onClick={handleAnularDia}
-                className="flex-1 font-barlow-condensed tracking-wide"
-                style={{ background: 'rgba(239,68,68,0.2)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.4)' }}
-              >
-                Anular Dia
+            <div className="flex gap-2">
+              <Button variant="destructive" onClick={handleAnular} disabled={busy} className="font-barlow-condensed tracking-wide">
+                {busy ? 'Anulando...' : 'Sim, anular'}
               </Button>
-              <Button
-                variant="outline"
-                onClick={() => setAnularDiaOpen(false)}
-                className="flex-1 font-barlow-condensed tracking-wide"
-                style={{ borderColor: '#444', color: '#888' }}
-              >
-                Cancelar
-              </Button>
+              <Button variant="outline" onClick={() => setConfirmAnular(false)} className="font-barlow-condensed">Cancelar</Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+// ─── Seleção de partida ───────────────────────────────────────────────────────
+
+function TimeSelector({ label, selectedId, disabledId, times, onChange }: {
+  label: string
+  selectedId: string
+  disabledId: string
+  times: TimeData[]
+  onChange: (id: string) => void
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="font-barlow-condensed text-xs tracking-widest uppercase text-muted-foreground">{label}</div>
+      <div className="grid grid-cols-3 gap-2">
+        {times.map((t) => {
+          const hex = COR_HEX[t.cor as CorTime] ?? '#888'
+          const selected = String(t.id) === selectedId
+          const disabled = String(t.id) === disabledId
+          return (
+            <button
+              key={t.id}
+              onClick={() => onChange(String(t.id))}
+              disabled={disabled}
+              className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide transition-all disabled:opacity-25 disabled:cursor-not-allowed"
+              style={{
+                border: `1.5px solid ${selected ? hex : '#2a2a2a'}`,
+                background: selected ? `${hex}20` : '#151515',
+                color: selected ? hex : hex,
+              }}
+            >
+              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: hex, opacity: selected ? 1 : 0.5 }} />
+              {t.nome}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function SelecaoPartida({ times, isFirst, onConfirmar, onCancelar, busy }: {
+  times: TimeData[]; isFirst: boolean
+  onConfirmar: (a: number, b: number) => void; onCancelar: () => void; busy: boolean
+}) {
+  const [timeAId, setTimeAId] = useState('')
+  const [timeBId, setTimeBId] = useState('')
+  const invalido = !timeAId || !timeBId || timeAId === timeBId
+  const waiting = timeAId && timeBId ? times.find((t) => String(t.id) !== timeAId && String(t.id) !== timeBId) : null
+
+  return (
+    <div className="rounded-xl border p-5 space-y-5" style={{ borderColor: '#242424', background: '#111' }}>
+      <div>
+        <div className="font-bebas tracking-widest text-xl" style={{ color: '#f5c400' }}>
+          {isFirst ? 'PRIMEIRO CONFRONTO' : 'PRÓXIMO CONFRONTO'}
+        </div>
+        <p className="font-barlow-condensed text-sm text-muted-foreground">Selecione os times que vão jogar</p>
+      </div>
+
+      <TimeSelector label="Time A" selectedId={timeAId} disabledId={timeBId} times={times} onChange={setTimeAId} />
+
+      <div className="flex items-center gap-3">
+        <div className="flex-1 h-px" style={{ background: '#1e1e1e' }} />
+        <span className="font-bebas text-lg flex-shrink-0" style={{ color: '#ef4444' }}>VS</span>
+        <div className="flex-1 h-px" style={{ background: '#1e1e1e' }} />
+      </div>
+
+      <TimeSelector label="Time B" selectedId={timeBId} disabledId={timeAId} times={times} onChange={setTimeBId} />
+
+      {waiting && (
+        <div className="flex items-center gap-2 font-barlow-condensed text-xs text-muted-foreground">
+          <div className="w-2 h-2 rounded-full" style={{ background: COR_HEX[waiting.cor as CorTime] ?? '#888' }} />
+          <span><strong style={{ color: COR_HEX[waiting.cor as CorTime] ?? '#888' }}>{waiting.nome}</strong> aguarda</span>
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <button onClick={() => onConfirmar(Number(timeAId), Number(timeBId))} disabled={invalido || busy}
+          className="flex-1 py-3 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide disabled:opacity-30"
+          style={{ background: '#f5c400', color: '#000' }}>
+          {busy ? 'Criando...' : 'Confirmar'}
+        </button>
+        <button onClick={onCancelar} disabled={busy}
+          className="px-4 py-3 rounded-xl font-barlow-condensed text-sm tracking-wide border"
+          style={{ borderColor: '#333', color: '#888', background: 'transparent' }}>
+          Voltar
+        </button>
+      </div>
     </div>
   )
 }

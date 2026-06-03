@@ -6,8 +6,8 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { CicloSchema, type CicloInput, nomeDoCiclo } from '@/lib/validations/ciclo'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { DatePickerField } from '@/components/ui/date-picker-field'
 import {
   Dialog,
   DialogContent,
@@ -25,16 +25,17 @@ interface Props {
 export function CicloForm({ open, onOpenChange, cicloId, defaultValues }: Props) {
   const router = useRouter()
   const {
-    register,
     handleSubmit,
     watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<CicloInput>({
     resolver: zodResolver(CicloSchema),
     defaultValues: defaultValues ?? {},
   })
 
-  const inicioEm = watch('inicioEm')
+  const inicioEm = watch('inicioEm') ?? ''
+  const fimEm = watch('fimEm') ?? ''
   const nomePreview = inicioEm ? nomeDoCiclo(inicioEm) : null
 
   const onSubmit = async (data: CicloInput) => {
@@ -69,12 +70,11 @@ export function CicloForm({ open, onOpenChange, cicloId, defaultValues }: Props)
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5 pt-1">
           <div className="space-y-1.5">
-            <Label htmlFor="inicioEm">Data de inicio *</Label>
-            <Input
-              id="inicioEm"
-              type="date"
-              {...register('inicioEm')}
-              className="font-barlow"
+            <Label>Data de inicio *</Label>
+            <DatePickerField
+              value={inicioEm}
+              onChange={(v) => setValue('inicioEm', v, { shouldValidate: true })}
+              placeholder="Selecione a data de inicio"
             />
             {errors.inicioEm && (
               <p className="text-sm text-destructive">{errors.inicioEm.message}</p>
@@ -87,18 +87,17 @@ export function CicloForm({ open, onOpenChange, cicloId, defaultValues }: Props)
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="fimEm">Data de encerramento</Label>
-            <Input
-              id="fimEm"
-              type="date"
-              {...register('fimEm')}
-              className="font-barlow"
+            <Label>Data de encerramento</Label>
+            <DatePickerField
+              value={fimEm}
+              onChange={(v) => setValue('fimEm', v, { shouldValidate: true })}
+              placeholder="Deixe vazio para ciclo ativo"
             />
             <p className="text-xs text-muted-foreground font-barlow-condensed">
               Deixe em branco para manter o ciclo ativo indefinidamente
             </p>
             {errors.fimEm && (
-              <p className="text-sm text-destructive">{errors.fimEm.message}</p>
+              <p className="text-sm text-destructive">{errors.fimEm?.message as string}</p>
             )}
           </div>
 

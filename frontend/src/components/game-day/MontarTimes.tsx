@@ -115,7 +115,7 @@ export function MontarTimes({ data, jogadoresSelecionados, timesIniciais, onFech
       <div>
         <div className="w-8 h-[3px] rounded-sm mb-2" style={{ background: '#f5c400' }} />
         <h1 className="font-bebas text-4xl md:text-5xl tracking-widest leading-none capitalize">
-          {formatData(data)}
+          {data ? formatData(data) : 'Confronto'}
         </h1>
         <div className="flex items-center gap-2 mt-2">
           <div

@@ -7,6 +7,6 @@ export async function GET() {
     return NextResponse.json({ status: 'ok', db: 'ok' })
   } catch (error) {
     console.error('[health] DB error:', error)
-    return NextResponse.json({ status: 'ok', db: 'error' }, { status: 200 })
+    return NextResponse.json({ status: 'ok', db: error }, { status: 200 })
   }
 }

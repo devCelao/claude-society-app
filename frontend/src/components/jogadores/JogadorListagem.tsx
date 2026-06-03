@@ -35,6 +35,13 @@ export function JogadorListagem({ jogadoresIniciais }: Props) {
     setSuspensos((prev) => prev.filter((j) => j.id !== id))
   }
 
+  async function onSuspender() {
+    if (!mostrarSuspensos) return
+    const res = await fetch('/api/jogadores?incluirSuspensos=true')
+    const todos: Jogador[] = await res.json()
+    setSuspensos(todos.filter((j) => j.deletedAt !== null))
+  }
+
   const q = busca.toLowerCase()
   const visiveis = jogadoresIniciais.filter(
     (j) => !q || j.nome.toLowerCase().includes(q) || j.apelido?.toLowerCase().includes(q)
@@ -103,7 +110,7 @@ export function JogadorListagem({ jogadoresIniciais }: Props) {
           </div>
         )}
         {visiveis.map((jogador, idx) => (
-          <JogadorCard key={jogador.id} jogador={jogador} animDelay={idx * 45} />
+          <JogadorCard key={jogador.id} jogador={jogador} onSuspender={onSuspender} animDelay={idx * 45} />
         ))}
       </div>
 

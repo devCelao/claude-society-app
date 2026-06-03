@@ -1,15 +1,27 @@
 import { NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
 import { CicloSchema, nomeDoCiclo } from '@/lib/validations/ciclo'
 
-// TODO: substituir por prisma quando banco estiver acessível
-const MOCK_CICLOS = [
-  { id: 3, nome: 'Maio 2026', inicioEm: '2026-05-01', fimEm: null },
-  { id: 2, nome: 'Abril 2026', inicioEm: '2026-04-01', fimEm: '2026-04-30' },
-  { id: 1, nome: 'Março 2026', inicioEm: '2026-03-01', fimEm: '2026-03-31' },
-]
+function serializeCiclo(c: { id: number; nome: string; inicioEm: Date; fimEm: Date | null }) {
+  return {
+    id: c.id,
+    nome: c.nome,
+    inicioEm: c.inicioEm.toISOString().split('T')[0],
+    fimEm: c.fimEm ? c.fimEm.toISOString().split('T')[0] : null,
+  }
+}
 
 export async function GET() {
-  return NextResponse.json(MOCK_CICLOS)
+  try {
+    const ciclos = await prisma.ciclo.findMany({
+      orderBy: { inicioEm: 'desc' },
+      select: { id: true, nome: true, inicioEm: true, fimEm: true },
+    })
+    return NextResponse.json(ciclos.map(serializeCiclo))
+  } catch (error) {
+    console.error('[GET /api/ciclos]', error)
+    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
+  }
 }
 
 export async function POST(request: Request) {
@@ -23,10 +35,17 @@ export async function POST(request: Request) {
     const { inicioEm, fimEm } = result.data
     const nome = nomeDoCiclo(inicioEm)
 
-    // TODO: fechar ciclo ativo e persistir novo ciclo
-    const novoCiclo = { id: Date.now(), nome, inicioEm, fimEm: fimEm ?? null }
-    return NextResponse.json(novoCiclo, { status: 201 })
-  } catch {
+    const ciclo = await prisma.ciclo.create({
+      data: {
+        nome,
+        inicioEm: new Date(inicioEm + 'T12:00:00'),
+        fimEm: fimEm ? new Date(fimEm + 'T12:00:00') : null,
+      },
+    })
+
+    return NextResponse.json(serializeCiclo(ciclo), { status: 201 })
+  } catch (error) {
+    console.error('[POST /api/ciclos]', error)
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }

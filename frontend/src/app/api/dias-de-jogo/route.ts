@@ -1,37 +1,60 @@
 import { NextResponse } from 'next/server'
-import { DiaDeJogoSchema } from '@/lib/validations/dia-de-jogo'
+import { prisma } from '@/lib/db'
 
 export type DiaDeJogoResumo = {
   id: number
-  data: string
+  data: string | null
   status: 'PENDENTE' | 'EM_ANDAMENTO' | 'FINALIZADO'
   passo: 'lista' | 'times' | 'principal'
   totalJogadores: number
-  cicloNome: string
+  cicloNome: string | null
 }
-
-// TODO: substituir por prisma
-const MOCK_DIAS: DiaDeJogoResumo[] = [
-  { id: 3, data: '2026-05-31', status: 'PENDENTE',    passo: 'lista',     totalJogadores: 0,  cicloNome: 'Maio 2026' },
-  { id: 2, data: '2026-05-17', status: 'FINALIZADO',  passo: 'principal', totalJogadores: 18, cicloNome: 'Maio 2026' },
-  { id: 1, data: '2026-05-03', status: 'FINALIZADO',  passo: 'principal', totalJogadores: 16, cicloNome: 'Maio 2026' },
-]
 
 export async function GET() {
-  return NextResponse.json(MOCK_DIAS)
+  try {
+    const raw = await prisma.diaDeJogo.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        ciclo: { select: { nome: true } },
+        _count: { select: { times: true } },
+        times: { select: { _count: { select: { jogadorTimes: true } } } },
+      },
+    })
+    const data: DiaDeJogoResumo[] = raw.map((d) => ({
+      id: d.id,
+      data: d.data ? d.data.toISOString().split('T')[0] : null,
+      status: d.status,
+      passo: d._count.times === 3 ? 'principal' : 'lista',
+      totalJogadores: d.times.reduce((sum, t) => sum + t._count.jogadorTimes, 0),
+      cicloNome: d.ciclo?.nome ?? null,
+    }))
+    return NextResponse.json(data)
+  } catch (error) {
+    console.error('[GET /api/dias-de-jogo]', error)
+    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
+  }
 }
 
-export async function POST(request: Request) {
+export async function POST() {
   try {
-    const body = await request.json()
-    const result = DiaDeJogoSchema.safeParse(body)
-    if (!result.success) {
-      return NextResponse.json({ error: 'Dados invalidos', details: result.error.flatten() }, { status: 422 })
+    const bloqueado = await prisma.diaDeJogo.findFirst({
+      where: { status: { in: ['PENDENTE', 'EM_ANDAMENTO'] } },
+      select: { id: true, status: true },
+    })
+    if (bloqueado) {
+      const error = bloqueado.status === 'PENDENTE'
+        ? 'Ja existe um esquema pendente. Inicie-o antes de criar outro.'
+        : 'Ha um confronto em andamento. Finalize-o antes de criar um novo esquema.'
+      return NextResponse.json({ error }, { status: 400 })
     }
-    // TODO: criar no banco e associar ao ciclo ativo
-    const novo = { id: Date.now(), data: result.data.data, status: 'PENDENTE', passo: 'lista', totalJogadores: 0, cicloNome: 'Maio 2026' }
-    return NextResponse.json(novo, { status: 201 })
-  } catch {
+
+    const dia = await prisma.diaDeJogo.create({ data: { status: 'PENDENTE' } })
+    return NextResponse.json(
+      { id: dia.id, data: null, status: dia.status, passo: 'lista', totalJogadores: 0, cicloNome: null },
+      { status: 201 }
+    )
+  } catch (error) {
+    console.error('[POST /api/dias-de-jogo]', error)
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }

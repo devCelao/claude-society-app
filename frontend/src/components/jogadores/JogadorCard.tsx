@@ -48,10 +48,11 @@ interface Props {
   jogador: Jogador
   suspenso?: boolean
   onReativar?: (id: number) => void
+  onSuspender?: () => void
   animDelay?: number
 }
 
-export function JogadorCard({ jogador, suspenso = false, onReativar, animDelay = 0 }: Props) {
+export function JogadorCard({ jogador, suspenso = false, onReativar, onSuspender, animDelay = 0 }: Props) {
   const router = useRouter()
   const [reativando, setReativando] = useState(false)
   const [hovered, setHovered] = useState(false)
@@ -68,6 +69,7 @@ export function JogadorCard({ jogador, suspenso = false, onReativar, animDelay =
       return
     }
     toast.success('Jogador suspenso')
+    onSuspender?.()
     router.refresh()
   }
 
@@ -86,6 +88,7 @@ export function JogadorCard({ jogador, suspenso = false, onReativar, animDelay =
       }
       toast.success('Jogador reativado')
       onReativar?.(jogador.id)
+      router.refresh()
     } finally {
       setReativando(false)
     }

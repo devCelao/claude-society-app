@@ -24,6 +24,24 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
+  # Migrate — aplica prisma migrate deploy antes do app subir (one-shot)
+  # ---------------------------------------------------------------------------
+  migrate:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: migrator
+    container_name: claude-society-app-migrate
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - claude_society_net
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
   # App — monolito Next.js 14
   # ---------------------------------------------------------------------------
 # app:
@@ -36,6 +54,8 @@ services:
 #   depends_on:
 #     db:
 #       condition: service_healthy
+#     migrate:
+#       condition: service_completed_successfully
 #   labels:
 #     - "traefik.enable=true"
 #     - "traefik.http.routers.app.rule=Host(`${APP_DOMAIN}`)"

@@ -7,8 +7,8 @@ export const CicloSchema = z.object({
   fimEm: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Data invalida')
-    .optional()
-    .nullable(),
+    .nullable()
+    .optional(),
 })
 
 export const CicloUpdateSchema = CicloSchema.partial()

@@ -1,8 +1,7 @@
 import { z } from 'zod'
 
 export const DiaDeJogoSchema = z.object({
-  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data invalida'),
-  cicloId: z.number().int().positive('Ciclo obrigatorio'),
+  // data e cicloId sao definidos automaticamente ao iniciar o confronto
 })
 
 export const FecharListaSchema = z.object({
