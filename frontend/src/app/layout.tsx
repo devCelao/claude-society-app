@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Bebas_Neue, Barlow, Barlow_Condensed } from 'next/font/google'
 import { Toaster } from 'sonner'
+import { Providers } from '@/components/providers'
 import './globals.css'
 
 const bebasNeue = Bebas_Neue({
@@ -37,8 +38,10 @@ export default function RootLayout({
       className={`${bebasNeue.variable} ${barlow.variable} ${barlowCondensed.variable}`}
     >
       <body className="min-h-screen bg-background font-barlow antialiased">
-        {children}
-        <Toaster richColors position="top-right" />
+        <Providers>
+          {children}
+          <Toaster richColors position="top-right" />
+        </Providers>
       </body>
     </html>
   )

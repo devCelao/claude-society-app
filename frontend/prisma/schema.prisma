@@ -161,3 +161,13 @@ model Assistencia {
 
   @@map("assistencias")
 }
+
+model Usuario {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique @db.VarChar(50)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  name         String   @db.VarChar(100)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("usuarios")
+}

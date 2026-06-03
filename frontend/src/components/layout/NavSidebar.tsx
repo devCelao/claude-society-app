@@ -3,7 +3,8 @@
 import { useRef, useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Users, CalendarDays, Trophy, CalendarRange } from 'lucide-react'
+import { LayoutDashboard, Users, CalendarDays, Trophy, CalendarRange, LogOut } from 'lucide-react'
+import { useSession, signOut } from 'next-auth/react'
 
 const navItems = [
   { href: '/dashboard',    label: 'Ao Vivo',      icon: LayoutDashboard },
@@ -24,6 +25,11 @@ const configItems = [
 function SettingsMenu() {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const { data: session } = useSession()
+
+  const initials = session?.user?.name
+    ? session.user.name.slice(0, 2).toUpperCase()
+    : '?'
 
   useEffect(() => {
     if (!open) return
@@ -53,7 +59,7 @@ function SettingsMenu() {
         }}
         aria-label="Configurações"
       >
-        CM
+        {initials}
       </button>
 
       {open && (
@@ -61,6 +67,17 @@ function SettingsMenu() {
           className="absolute right-0 top-[calc(100%+8px)] w-60 rounded-xl border py-1.5 z-50"
           style={{ background: '#111111', borderColor: '#242424', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}
         >
+          {session?.user?.name && (
+            <div className="px-3.5 py-2.5 mb-1 border-b" style={{ borderColor: '#1e1e1e' }}>
+              <div className="font-barlow-condensed text-sm tracking-wide" style={{ color: '#f0ede0' }}>
+                {session.user.name}
+              </div>
+              <div className="font-barlow-condensed text-[10px] tracking-[0.1em] uppercase" style={{ color: '#555' }}>
+                Logado
+              </div>
+            </div>
+          )}
+
           <div
             className="px-3.5 py-2 mb-1 font-barlow-condensed text-[10px] tracking-[0.15em] uppercase"
             style={{ color: '#555' }}
@@ -90,6 +107,25 @@ function SettingsMenu() {
               </Link>
             )
           })}
+
+          <div className="border-t mt-1 pt-1" style={{ borderColor: '#1e1e1e' }}>
+            <button
+              onClick={() => signOut({ callbackUrl: '/login' })}
+              className="flex items-center gap-3 px-3.5 py-2.5 mx-1 w-[calc(100%-8px)] rounded-lg transition-colors"
+              style={{ color: '#888' }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#1a1a1a'
+                e.currentTarget.style.color = '#f0ede0'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent'
+                e.currentTarget.style.color = '#888'
+              }}
+            >
+              <LogOut size={15} className="flex-shrink-0" />
+              <span className="font-barlow-condensed text-sm tracking-wide">Sair</span>
+            </button>
+          </div>
         </div>
       )}
     </div>
