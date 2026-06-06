@@ -1,8 +1,5 @@
-# Dockerfile — claude-society-app (Next.js standalone)
-# Requer: output: 'standalone' em next.config.ts
-
 # ---------------------------------------------------------------------------
-# Stage 1: builder — compila o Next.js com todas as dependencias
+# Stage 1: builder
 # ---------------------------------------------------------------------------
 FROM node:20-alpine AS builder
 WORKDIR /app
@@ -14,31 +11,33 @@ ENV DATABASE_URL=$DATABASE_URL
 RUN npx prisma generate && npm run build
 
 # ---------------------------------------------------------------------------
-# Stage 3: migrator — aplica prisma migrate deploy em producao
+# Stage 2: migrator
 # ---------------------------------------------------------------------------
 FROM node:20-alpine AS migrator
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --omit=dev                  # ← só dependências de prod
 COPY prisma ./prisma
 COPY prisma.config.ts ./
 ENTRYPOINT ["npx", "prisma", "migrate", "deploy"]
 
 # ---------------------------------------------------------------------------
-# Stage 4: runtime — imagem final minima com standalone output
+# Stage 3: runtime
 # ---------------------------------------------------------------------------
 FROM node:20-alpine AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Copia o output standalone (inclui server.js + node_modules minimos)
 COPY --from=builder /app/.next/standalone ./
-# Copia os assets estaticos gerados
 COPY --from=builder /app/.next/static ./.next/static
-# Copia a pasta public (imagens, fontes, etc.)
 COPY --from=builder /app/public ./public
 
-EXPOSE 3000
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser                           # ← não roda como root
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://localhost:3000/api/health || exit 1
+
+EXPOSE 3000
 CMD ["node", "server.js"]
