@@ -16,7 +16,7 @@ RUN npx prisma generate && npm run build
 FROM node:20-alpine AS migrator
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev                  # ← só dependências de prod
+RUN npm ci
 COPY prisma ./prisma
 COPY prisma.config.ts ./
 ENTRYPOINT ["npx", "prisma", "migrate", "deploy"]
