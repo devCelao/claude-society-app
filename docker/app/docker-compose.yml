@@ -1,0 +1,40 @@
+name: pelada-app
+
+# ---------------------------------------------------------------------------
+# PRE-REQUISITO: stacks society-db e society-migrate devem estar concluidos.
+#
+# DATABASE_URL deve usar o container name como hostname:
+#   mysql://user:pass@claude-society-db:3306/claude_society_db
+# ---------------------------------------------------------------------------
+
+services:
+  # ---------------------------------------------------------------------------
+  # App — monolito Next.js 14
+  # ---------------------------------------------------------------------------
+  app:
+    image: ghcr.io/devcelao/pelada-app:latest
+    container_name: pelada-app
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+      NODE_ENV: ${NODE_ENV}
+    depends_on:
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.app.rule=Host(`${APP_DOMAIN}`)"
+      - "traefik.http.routers.app.entrypoints=websecure"
+      - "traefik.http.services.app.loadbalancer.server.port=3000"
+    networks:
+      - pelada_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+networks:
+  pelada_internal:
+    external: true
