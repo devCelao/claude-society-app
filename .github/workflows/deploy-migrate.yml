@@ -6,13 +6,12 @@ name: "Deploy — Migrate"
 #
 # Para ativar disparo automatico ao criar uma tag, descomente:
 #
-# on:
-#   push:
-#     tags:
-#       - 'v*.*.*'
 # ---------------------------------------------------------------------------
 
 on:
+  push:
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
     inputs:
       tag:
