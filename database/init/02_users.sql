@@ -5,5 +5,5 @@
 -- Executado automaticamente na inicializacao do container MySQL
 -- via docker-entrypoint-initdb.d (responsabilidade de montagem: agente-infra).
 
-CREATE USER IF NOT EXISTS 'claude_society_user'@'%'
+CREATE USER IF NOT EXISTS 'serviceapp'@'%'
   IDENTIFIED BY '${MYSQL_PASSWORD}';

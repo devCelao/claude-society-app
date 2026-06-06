@@ -6,6 +6,6 @@
 -- via docker-entrypoint-initdb.d (responsabilidade de montagem: agente-infra).
 
 GRANT SELECT, INSERT, UPDATE, DELETE
-  ON `claude_society_db`.* TO 'claude_society_user'@'%';
+  ON `peladadb`.* TO 'serviceapp'@'%';
 
 FLUSH PRIVILEGES;
