@@ -34,7 +34,7 @@ COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-USER appuser                           # ← não roda como root
+USER appuser
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -qO- http://localhost:3000/api/health || exit 1
