@@ -10,8 +10,7 @@ export default async function ConfiguracaoPage() {
   return (
     <main className="p-6">
       <ConfiguracaoForm
-        corteInicioInicial={config?.corteInicio ? config.corteInicio.toISOString().split('T')[0] : null}
-        corteFimInicial={config?.corteFim ? config.corteFim.toISOString().split('T')[0] : null}
+        diaDeCorteInicial={config?.diaDeCorte ?? null}
       />
     </main>
   )

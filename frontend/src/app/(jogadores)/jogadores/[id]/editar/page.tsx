@@ -23,7 +23,8 @@ export default async function EditarJogadorPage({ params }: Props) {
         defaultValues={{
           nome: jogador.nome,
           apelido: jogador.apelido ?? undefined,
-          posicao: jogador.posicao ?? undefined,
+          posicaoPrimaria: jogador.posicaoPrimaria ?? undefined,
+          posicaoSecundaria: jogador.posicaoSecundaria ?? undefined,
           convidado: jogador.convidado,
         }}
       />

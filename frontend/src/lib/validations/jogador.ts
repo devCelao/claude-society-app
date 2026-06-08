@@ -1,5 +1,17 @@
 import { z } from 'zod'
 
+export const POSICOES_JOGADOR = [
+  'GOLEIRO',
+  'ZAGUEIRO',
+  'LATERAL',
+  'VOLANTE',
+  'MEIA',
+  'ATACANTE',
+  'PONTA',
+] as const
+
+export type PosicaoJogadorValue = (typeof POSICOES_JOGADOR)[number]
+
 export const JogadorSchema = z.object({
   nome: z
     .string({ error: 'Nome e obrigatorio' })
@@ -10,17 +22,13 @@ export const JogadorSchema = z.object({
     .max(50, 'Apelido deve ter no maximo 50 caracteres')
     .optional()
     .nullable(),
-  posicao: z
-    .string()
-    .max(30, 'Posicao deve ter no maximo 30 caracteres')
-    .optional()
-    .nullable(),
+  posicaoPrimaria: z.enum(POSICOES_JOGADOR).optional().nullable(),
+  posicaoSecundaria: z.enum(POSICOES_JOGADOR).optional().nullable(),
   convidado: z.boolean(),
 })
 
 export const JogadorUpdateSchema = JogadorSchema.partial()
 
-// Usado somente pelo Route Handler de reativacao
 export const JogadorReativarSchema = z.object({
   deletedAt: z.null(),
 })

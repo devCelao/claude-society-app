@@ -18,12 +18,6 @@ const PASSO_LABEL: Record<string, string> = {
   principal: 'Times formados',
 }
 
-const STATUS_ICON = {
-  PENDENTE:    Clock,
-  EM_ANDAMENTO: Play,
-  FINALIZADO:  CheckCircle2,
-}
-
 const STATUS_COLOR = {
   PENDENTE:     '#888888',
   EM_ANDAMENTO: '#f5c400',
@@ -36,7 +30,6 @@ function formatData(iso: string) {
 }
 
 export function DiaDeJogoCard({ dia, animDelay = 0 }: { dia: DiaResumo; animDelay?: number }) {
-  const Icon = STATUS_ICON[dia.status]
   const color = STATUS_COLOR[dia.status]
 
   return (
@@ -65,30 +58,52 @@ export function DiaDeJogoCard({ dia, animDelay = 0 }: { dia: DiaResumo; animDela
       </div>
 
       <div className="flex-1 min-w-0">
-        <div className="font-barlow-condensed text-sm font-semibold text-foreground tracking-wide capitalize">
-          {dia.data ? formatData(dia.data) : 'Aguardando início'}
-        </div>
-        <div className="flex items-center gap-3 mt-0.5">
-          <div className="flex items-center gap-1 font-barlow-condensed text-xs tracking-wide" style={{ color }}>
-            <Icon size={11} />
-            <span>
-              {dia.status === 'PENDENTE' ? PASSO_LABEL[dia.passo] : dia.status === 'EM_ANDAMENTO' ? 'Em andamento' : 'Finalizado'}
-            </span>
+        {/* Linha superior: data (esquerda) + status/finalizado (direita) */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="font-barlow-condensed text-sm font-semibold text-foreground tracking-wide capitalize truncate">
+            {dia.data ? formatData(dia.data) : 'Aguardando início'}
           </div>
-          {dia.totalJogadores > 0 && (
-            <div className="flex items-center gap-1 font-barlow-condensed text-xs text-muted-foreground">
-              <Users size={11} />
-              <span>{dia.totalJogadores} jogadores</span>
+
+          {dia.status === 'FINALIZADO' && (
+            <div className="flex items-center gap-1 font-barlow-condensed text-xs tracking-wide flex-shrink-0" style={{ color: '#4ade80' }}>
+              <CheckCircle2 size={11} />
+              <span>Finalizado</span>
+            </div>
+          )}
+
+          {dia.status === 'EM_ANDAMENTO' && (
+            <div className="flex items-center gap-1 font-barlow-condensed text-xs tracking-wide flex-shrink-0" style={{ color: '#f5c400' }}>
+              <Play size={11} />
+              <span>Em andamento</span>
+            </div>
+          )}
+
+          {dia.status === 'PENDENTE' && (
+            <div className="flex items-center gap-1 font-barlow-condensed text-xs tracking-wide flex-shrink-0" style={{ color: '#888' }}>
+              <Clock size={11} />
+              <span>{PASSO_LABEL[dia.passo]}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Linha inferior: jogadores + ciclo */}
+        <div className="flex items-center justify-between gap-2 mt-0.5">
+          <div className="flex items-center gap-3">
+            {dia.totalJogadores > 0 && (
+              <div className="flex items-center gap-1 font-barlow-condensed text-xs text-muted-foreground">
+                <Users size={11} />
+                <span>{dia.totalJogadores} jogadores</span>
+              </div>
+            )}
+          </div>
+
+          {dia.cicloNome && (
+            <div className="font-barlow-condensed text-[10px] tracking-widest text-muted-foreground">
+              {dia.cicloNome}
             </div>
           )}
         </div>
       </div>
-
-      {dia.cicloNome && (
-        <div className="font-barlow-condensed text-[10px] tracking-widest text-muted-foreground mr-1">
-          {dia.cicloNome}
-        </div>
-      )}
 
       <ChevronRight size={15} className="text-muted-foreground flex-shrink-0 transition-transform group-hover:translate-x-0.5" />
     </Link>
