@@ -1,11 +1,19 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { calcularPeriodoCiclo } from '@/lib/utils'
 import { CicloSchema, nomeDoCiclo } from '@/lib/validations/ciclo'
 
-function serializeCiclo(c: { id: number; nome: string; inicioEm: Date; fimEm: Date | null }) {
+function serializeCiclo(c: {
+  id: number
+  nome: string
+  diaDeCorte: number | null
+  inicioEm: Date
+  fimEm: Date | null
+}) {
   return {
     id: c.id,
     nome: c.nome,
+    diaDeCorte: c.diaDeCorte,
     inicioEm: c.inicioEm.toISOString().split('T')[0],
     fimEm: c.fimEm ? c.fimEm.toISOString().split('T')[0] : null,
   }
@@ -15,7 +23,7 @@ export async function GET() {
   try {
     const ciclos = await prisma.ciclo.findMany({
       orderBy: { inicioEm: 'desc' },
-      select: { id: true, nome: true, inicioEm: true, fimEm: true },
+      select: { id: true, nome: true, diaDeCorte: true, inicioEm: true, fimEm: true },
     })
     return NextResponse.json(ciclos.map(serializeCiclo))
   } catch (error) {
@@ -32,15 +40,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Dados invalidos', details: result.error.flatten() }, { status: 422 })
     }
 
-    const { inicioEm, fimEm } = result.data
+    const { diaDeCorte, mesReferencia } = result.data
+    const [ano, mes] = mesReferencia.split('-').map(Number)
+    const { inicioEm, fimEm } = calcularPeriodoCiclo(diaDeCorte, mes, ano)
     const nome = nomeDoCiclo(inicioEm)
 
     const ciclo = await prisma.ciclo.create({
-      data: {
-        nome,
-        inicioEm: new Date(inicioEm + 'T12:00:00'),
-        fimEm: fimEm ? new Date(fimEm + 'T12:00:00') : null,
-      },
+      data: { nome, diaDeCorte, inicioEm, fimEm },
     })
 
     return NextResponse.json(serializeCiclo(ciclo), { status: 201 })

@@ -26,7 +26,13 @@ export async function GET(
       include: {
         timeA: { select: { id: true, nome: true, cor: true } },
         timeB: { select: { id: true, nome: true, cor: true } },
-        gols: { select: { timeId: true, jogadorId: true } },
+        gols: {
+          include: {
+            jogador: { select: { id: true, nome: true } },
+            assistencia: { include: { jogador: { select: { id: true, nome: true } } } },
+          },
+          orderBy: { id: 'asc' },
+        },
       },
     })
     if (!partida) return NextResponse.json({ error: 'Nao encontrada' }, { status: 404 })

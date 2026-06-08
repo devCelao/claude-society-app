@@ -11,3 +11,4 @@ export type {
   Gol,
   Assistencia,
 } from '@/generated/prisma/client'
+

@@ -14,6 +14,18 @@ export type Jogador = {
   nome: string
   apelido: string | null
   convidado: boolean
+  posicaoPrimaria: string | null
+  posicaoSecundaria: string | null
+}
+
+export const POSICAO_SIGLA: Record<string, string> = {
+  GOLEIRO:  'GOL',
+  ZAGUEIRO: 'ZAG',
+  LATERAL:  'LAT',
+  VOLANTE:  'VOL',
+  MEIA:     'MEI',
+  ATACANTE: 'ATA',
+  PONTA:    'PON',
 }
 
 export type TimeFormado = {

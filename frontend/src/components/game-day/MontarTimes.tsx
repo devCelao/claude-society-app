@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { Shuffle, ChevronDown, ArrowLeft, Plus, Minus, X } from 'lucide-react'
 import type { Jogador, TimeFormado } from './DiaDeJogoFlow'
+import { POSICAO_SIGLA } from './DiaDeJogoFlow'
 
 type CorTime = 'vermelho' | 'azul' | 'verde' | 'laranja'
 
@@ -302,18 +303,33 @@ export function MontarTimes({ data, jogadoresSelecionados, timesIniciais, onFech
                           onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                         >
                           <Plus size={13} style={{ color: cor.hex, flexShrink: 0 }} />
-                          <span className="flex-1 text-foreground">{j.nome}</span>
-                          {j.apelido && (
-                            <span className="text-muted-foreground text-xs">({j.apelido})</span>
-                          )}
-                          {j.convidado && (
-                            <span
-                              className="text-[9px] tracking-widest px-1.5 py-0.5 rounded flex-shrink-0"
-                              style={{ background: 'rgba(251,146,60,0.15)', color: '#fb923c' }}
-                            >
-                              G
-                            </span>
-                          )}
+                          <span className="flex-1 text-foreground truncate">{j.nome}</span>
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            {j.posicaoPrimaria && (
+                              <span
+                                className="font-barlow-condensed text-[10px] font-bold tracking-wider px-1 py-0.5 rounded"
+                                style={{ background: 'rgba(255,255,255,0.06)', color: '#aaaaaa' }}
+                              >
+                                {POSICAO_SIGLA[j.posicaoPrimaria] ?? j.posicaoPrimaria}
+                              </span>
+                            )}
+                            {j.posicaoSecundaria && (
+                              <span
+                                className="font-barlow-condensed text-[10px] tracking-wider px-1 py-0.5 rounded opacity-60"
+                                style={{ background: 'rgba(255,255,255,0.04)', color: '#888888' }}
+                              >
+                                {POSICAO_SIGLA[j.posicaoSecundaria] ?? j.posicaoSecundaria}
+                              </span>
+                            )}
+                            {j.convidado && (
+                              <span
+                                className="font-barlow-condensed text-[9px] tracking-widest px-1.5 py-0.5 rounded"
+                                style={{ background: 'rgba(251,146,60,0.15)', color: '#fb923c' }}
+                              >
+                                G
+                              </span>
+                            )}
+                          </div>
                         </button>
                       ))}
                     </div>

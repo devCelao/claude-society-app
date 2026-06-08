@@ -3,22 +3,17 @@ import { prisma } from '@/lib/db'
 import { z } from 'zod'
 
 const ConfigSchema = z.object({
-  corteInicio: z.preprocess(
-    (v) => (v === '' ? null : v),
-    z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data invalida').nullable().optional()
-  ),
-  corteFim: z.preprocess(
-    (v) => (v === '' ? null : v),
-    z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data invalida').nullable().optional()
-  ),
+  diaDeCorte: z
+    .number()
+    .int()
+    .min(1)
+    .max(31)
+    .nullable()
+    .optional(),
 })
 
-function serialize(c: { corteInicio: Date | null; corteFim: Date | null } | null) {
-  if (!c) return { corteInicio: null, corteFim: null }
-  return {
-    corteInicio: c.corteInicio ? c.corteInicio.toISOString().split('T')[0] : null,
-    corteFim: c.corteFim ? c.corteFim.toISOString().split('T')[0] : null,
-  }
+function serialize(c: { diaDeCorte: number | null } | null) {
+  return { diaDeCorte: c?.diaDeCorte ?? null }
 }
 
 export async function GET() {
@@ -39,18 +34,11 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'Dados invalidos', details: result.error.flatten() }, { status: 422 })
     }
 
-    const { corteInicio, corteFim } = result.data
+    const { diaDeCorte } = result.data
     const config = await prisma.configuracaoJogos.upsert({
       where: { id: 1 },
-      create: {
-        id: 1,
-        corteInicio: corteInicio ? new Date(corteInicio + 'T12:00:00') : null,
-        corteFim: corteFim ? new Date(corteFim + 'T12:00:00') : null,
-      },
-      update: {
-        corteInicio: corteInicio !== undefined ? (corteInicio ? new Date(corteInicio + 'T12:00:00') : null) : undefined,
-        corteFim: corteFim !== undefined ? (corteFim ? new Date(corteFim + 'T12:00:00') : null) : undefined,
-      },
+      create: { id: 1, diaDeCorte: diaDeCorte ?? null },
+      update: { diaDeCorte: diaDeCorte !== undefined ? (diaDeCorte ?? null) : undefined },
     })
 
     return NextResponse.json(serialize(config))

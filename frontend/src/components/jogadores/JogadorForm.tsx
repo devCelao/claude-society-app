@@ -1,14 +1,31 @@
 'use client'
 
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { JogadorSchema, type JogadorInput } from '@/lib/validations/jogador'
+import { JogadorSchema, POSICOES_JOGADOR, type JogadorInput, type PosicaoJogadorValue } from '@/lib/validations/jogador'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+
+const POSICAO_LABELS: Record<PosicaoJogadorValue, string> = {
+  GOLEIRO: 'Goleiro',
+  ZAGUEIRO: 'Zagueiro',
+  LATERAL: 'Lateral',
+  VOLANTE: 'Volante',
+  MEIA: 'Meia',
+  ATACANTE: 'Atacante',
+  PONTA: 'Ponta',
+}
 
 interface Props {
   jogadorId?: number
@@ -19,9 +36,8 @@ export function JogadorForm({ jogadorId, defaultValues }: Props) {
   const router = useRouter()
   const {
     register,
+    control,
     handleSubmit,
-    setValue,
-    watch,
     formState: { errors, isSubmitting },
   } = useForm<JogadorInput>({
     resolver: zodResolver(JogadorSchema),
@@ -30,8 +46,6 @@ export function JogadorForm({ jogadorId, defaultValues }: Props) {
       ...defaultValues,
     },
   })
-
-  const convidado = watch('convidado')
 
   const onSubmit = async (data: JogadorInput) => {
     const url = jogadorId ? `/api/jogadores/${jogadorId}` : '/api/jogadores'
@@ -72,24 +86,82 @@ export function JogadorForm({ jogadorId, defaultValues }: Props) {
         )}
       </div>
 
-      <div className="space-y-1">
-        <Label htmlFor="posicao">Posicao</Label>
-        <Input id="posicao" {...register('posicao')} placeholder="Ex: goleiro, atacante" />
-        {errors.posicao && (
-          <p className="text-sm text-destructive">{errors.posicao.message}</p>
-        )}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <Label>Posicao primaria</Label>
+          <Controller
+            control={control}
+            name="posicaoPrimaria"
+            render={({ field }) => (
+              <Select
+                value={field.value ?? ''}
+                onValueChange={(val) => field.onChange(val || null)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Selecione..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">—</SelectItem>
+                  {POSICOES_JOGADOR.map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {POSICAO_LABELS[p]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          />
+          {errors.posicaoPrimaria && (
+            <p className="text-sm text-destructive">{errors.posicaoPrimaria.message}</p>
+          )}
+        </div>
+
+        <div className="space-y-1">
+          <Label>Posicao secundaria</Label>
+          <Controller
+            control={control}
+            name="posicaoSecundaria"
+            render={({ field }) => (
+              <Select
+                value={field.value ?? ''}
+                onValueChange={(val) => field.onChange(val || null)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Selecione..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">—</SelectItem>
+                  {POSICOES_JOGADOR.map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {POSICAO_LABELS[p]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          />
+          {errors.posicaoSecundaria && (
+            <p className="text-sm text-destructive">{errors.posicaoSecundaria.message}</p>
+          )}
+        </div>
       </div>
 
-      <div className="flex items-center gap-3">
-        <Checkbox
-          id="convidado"
-          checked={convidado}
-          onCheckedChange={(val) => setValue('convidado', Boolean(val))}
+      <div className="flex justify-center items-center gap-3">
+        <Controller
+          control={control}
+          name="convidado"
+          render={({ field }) => (
+            <Checkbox
+              id="convidado"
+              checked={field.value}
+              onCheckedChange={(val) => field.onChange(Boolean(val))}
+            />
+          )}
         />
         <Label htmlFor="convidado">Jogador convidado</Label>
       </div>
 
-      <div className="flex gap-2 pt-2">
+      <div className="flex justify-center gap-2 pt-2">
         <Button type="submit" disabled={isSubmitting}>
           {isSubmitting ? 'Salvando...' : jogadorId ? 'Salvar alteracoes' : 'Cadastrar'}
         </Button>

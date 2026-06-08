@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { Pencil, UserX, UserCheck } from 'lucide-react'
 import { Jogador } from '@/types'
 import {
   AlertDialog,
@@ -17,13 +18,14 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 
-const POSITION_STYLES: Record<string, { color: string; bg: string }> = {
-  Goleiro:      { color: '#f5c400', bg: '#1e1800' },
-  Zagueiro:     { color: '#60a5fa', bg: '#07142a' },
-  Lateral:      { color: '#67e8f9', bg: '#051820' },
-  'Meio-campo': { color: '#c084fc', bg: '#130430' },
-  Atacante:     { color: '#fb923c', bg: '#1e0e00' },
-  Ponta:        { color: '#f87171', bg: '#1e0606' },
+const POSITION_STYLES: Record<string, { color: string; bg: string; label: string }> = {
+  GOLEIRO:   { color: '#f5c400', bg: '#1e1800', label: 'Goleiro' },
+  ZAGUEIRO:  { color: '#60a5fa', bg: '#07142a', label: 'Zagueiro' },
+  LATERAL:   { color: '#67e8f9', bg: '#051820', label: 'Lateral' },
+  VOLANTE:   { color: '#c084fc', bg: '#130430', label: 'Volante' },
+  MEIA:      { color: '#a78bfa', bg: '#0d0520', label: 'Meia' },
+  ATACANTE:  { color: '#fb923c', bg: '#1e0e00', label: 'Atacante' },
+  PONTA:     { color: '#f87171', bg: '#1e0606', label: 'Ponta' },
 }
 
 const AVATAR_PALETTE = [
@@ -58,9 +60,9 @@ export function JogadorCard({ jogador, suspenso = false, onReativar, onSuspender
   const [hovered, setHovered] = useState(false)
 
   const avatar = AVATAR_PALETTE[jogador.id % AVATAR_PALETTE.length]
-  const posStyle = jogador.posicao
-    ? (POSITION_STYLES[jogador.posicao] ?? { color: '#9ca3af', bg: '#1a1a1a' })
-    : null
+  const posEstilo = jogador.posicaoPrimaria ? (POSITION_STYLES[jogador.posicaoPrimaria] ?? null) : null
+  const posSecEstilo = jogador.posicaoSecundaria ? (POSITION_STYLES[jogador.posicaoSecundaria] ?? null) : null
+  const temLinha2 = jogador.apelido || posEstilo || posSecEstilo || jogador.convidado || suspenso
 
   async function handleSuspender() {
     const res = await fetch(`/api/jogadores/${jogador.id}`, { method: 'DELETE' })
@@ -102,7 +104,7 @@ export function JogadorCard({ jogador, suspenso = false, onReativar, onSuspender
       onMouseLeave={() => setHovered(false)}
     >
       <div
-        className="rounded-xl p-3.5 flex items-center gap-3 transition-all"
+        className="rounded-xl px-3.5 py-3 flex flex-col gap-1.5 transition-all"
         style={{
           background: hovered
             ? suspenso ? '#180808' : '#191919'
@@ -118,30 +120,111 @@ export function JogadorCard({ jogador, suspenso = false, onReativar, onSuspender
           opacity: suspenso ? 0.75 : 1,
         }}
       >
-        {/* Avatar */}
-        <div
-          className="w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center font-bebas text-base tracking-wide"
-          style={{
-            background: avatar.bg,
-            color: avatar.color,
-            border: `1.5px solid ${avatar.color}28`,
-          }}
-        >
-          {initials(jogador.nome)}
+        {/* Linha 1: avatar + nome + ícones de ação */}
+        <div className="flex items-center gap-2.5">
+          <div
+            className="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center font-bebas text-sm tracking-wide"
+            style={{
+              background: avatar.bg,
+              color: avatar.color,
+              border: `1.5px solid ${avatar.color}28`,
+            }}
+          >
+            {initials(jogador.nome)}
+          </div>
+
+          <span
+            className="flex-1 min-w-0 text-[15px] font-semibold font-barlow leading-tight truncate"
+            style={{ color: suspenso ? '#555555' : '#f0ede0' }}
+          >
+            {jogador.nome}
+          </span>
+
+          {/* Ícones de ação */}
+          <div className="flex items-center gap-0.5 flex-shrink-0">
+            {suspenso ? (
+              <button
+                onClick={handleReativar}
+                disabled={reativando}
+                title="Reativar jogador"
+                className="p-1.5 rounded-lg transition-all disabled:opacity-50 hover:bg-[rgba(245,196,0,0.08)]"
+                style={{ color: '#f5c400' }}
+              >
+                <UserCheck size={15} />
+              </button>
+            ) : (
+              <>
+                <Link
+                  href={`/jogadores/${jogador.id}/editar`}
+                  title="Editar jogador"
+                  className="p-1.5 rounded-lg transition-all hover:bg-[rgba(255,255,255,0.06)]"
+                  style={{ color: '#666666' }}
+                >
+                  <Pencil size={14} />
+                </Link>
+
+                <AlertDialog>
+                  <AlertDialogTrigger
+                    render={
+                      <button
+                        title="Suspender jogador"
+                        className="p-1.5 rounded-lg transition-all hover:bg-[rgba(248,113,113,0.08)]"
+                        style={{ color: '#f87171' }}
+                      />
+                    }
+                  >
+                    <UserX size={14} />
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Suspender jogador?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {jogador.nome} não aparecerá mais na listagem principal nem estará
+                        disponível para seleção em novos times. Você pode reativá-lo a qualquer
+                        momento.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleSuspender}>Suspender</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </>
+            )}
+          </div>
         </div>
 
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
-            <span
-              className="text-[15px] font-semibold font-barlow"
-              style={{ color: suspenso ? '#555555' : '#f0ede0' }}
-            >
-              {jogador.nome}
-            </span>
+        {/* Linha 2: apelido + badges (posições + visitante + suspenso), todos à direita */}
+        {temLinha2 && (
+          <div className="flex items-center justify-end gap-1.5 flex-wrap pl-[46px]">
             {jogador.apelido && (
-              <span className="text-sm text-muted-foreground font-barlow-condensed">
+              <span className="text-[12px] text-muted-foreground font-barlow-condensed mr-auto">
                 ({jogador.apelido})
+              </span>
+            )}
+            {posEstilo && (
+              <span
+                className="font-barlow-condensed text-[10px] font-semibold tracking-wide px-1.5 py-0.5 rounded"
+                style={{
+                  background: posEstilo.bg,
+                  color: posEstilo.color,
+                  border: `1px solid ${posEstilo.color}22`,
+                }}
+              >
+                {posEstilo.label.toUpperCase()}
+              </span>
+            )}
+            {posSecEstilo && (
+              <span
+                className="font-barlow-condensed text-[10px] font-medium tracking-wide px-1.5 py-0.5 rounded opacity-70"
+                style={{
+                  background: posSecEstilo.bg,
+                  color: posSecEstilo.color,
+                  border: `1px solid ${posSecEstilo.color}18`,
+                }}
+              >
+                {posSecEstilo.label.toUpperCase()}
               </span>
             )}
             {jogador.convidado && (
@@ -169,70 +252,7 @@ export function JogadorCard({ jogador, suspenso = false, onReativar, onSuspender
               </span>
             )}
           </div>
-          {posStyle && jogador.posicao && (
-            <span
-              className="font-barlow-condensed text-[11px] font-semibold tracking-wide px-2 py-0.5 rounded"
-              style={{
-                background: posStyle.bg,
-                color: posStyle.color,
-                border: `1px solid ${posStyle.color}22`,
-              }}
-            >
-              {jogador.posicao.toUpperCase()}
-            </span>
-          )}
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          {suspenso ? (
-            <button
-              onClick={handleReativar}
-              disabled={reativando}
-              className="font-barlow-condensed text-[13px] tracking-wide px-3 py-1.5 rounded-lg transition-all disabled:opacity-50 hover:bg-[rgba(245,196,0,0.08)]"
-              style={{ color: '#f5c400', border: '1px solid #a3840055', background: 'transparent' }}
-            >
-              {reativando ? 'Reativando...' : 'Reativar'}
-            </button>
-          ) : (
-            <>
-              <Link
-                href={`/jogadores/${jogador.id}/editar`}
-                className="font-barlow-condensed text-[13px] tracking-wide px-3 py-1.5 rounded-lg transition-all hover:bg-[rgba(245,196,0,0.1)] hover:text-gold"
-                style={{ color: '#888888', border: '1px solid #242424', background: 'transparent' }}
-              >
-                Editar
-              </Link>
-
-              <AlertDialog>
-                <AlertDialogTrigger
-                  render={
-                    <button
-                      className="font-barlow-condensed text-[13px] tracking-wide px-3 py-1.5 rounded-lg transition-all hover:bg-[rgba(248,113,113,0.08)]"
-                      style={{ color: '#f87171', border: 'none', background: 'transparent' }}
-                    />
-                  }
-                >
-                  Suspender
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Suspender jogador?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      {jogador.nome} não aparecerá mais na listagem principal nem estará
-                      disponível para seleção em novos times. Você pode reativá-lo a qualquer
-                      momento.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleSuspender}>Suspender</AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </>
-          )}
-        </div>
+        )}
       </div>
     </div>
   )

@@ -1,14 +1,14 @@
 import { z } from 'zod'
 
 export const CicloSchema = z.object({
-  inicioEm: z
-    .string({ error: 'Data de inicio e obrigatoria' })
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Data invalida'),
-  fimEm: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Data invalida')
-    .nullable()
-    .optional(),
+  diaDeCorte: z
+    .number({ error: 'Dia de corte e obrigatorio' })
+    .int()
+    .min(1)
+    .max(31),
+  mesReferencia: z
+    .string({ error: 'Mes de referencia e obrigatorio' })
+    .regex(/^\d{4}-\d{2}$/, 'Formato invalido (AAAA-MM)'),
 })
 
 export const CicloUpdateSchema = CicloSchema.partial()

@@ -4,35 +4,31 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { CalendarRange, Save, Trash2 } from 'lucide-react'
-import { DatePickerField } from '@/components/ui/date-picker-field'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 interface Props {
-  corteInicioInicial: string | null
-  corteFimInicial: string | null
+  diaDeCorteInicial: number | null
 }
 
-export function ConfiguracaoForm({ corteInicioInicial, corteFimInicial }: Props) {
+export function ConfiguracaoForm({ diaDeCorteInicial }: Props) {
   const router = useRouter()
-  const [corteInicio, setCorteInicio] = useState(corteInicioInicial ?? '')
-  const [corteFim, setCorteFim] = useState(corteFimInicial ?? '')
+  const [valor, setValor] = useState(diaDeCorteInicial != null ? String(diaDeCorteInicial) : '')
   const [salvando, setSalvando] = useState(false)
 
-  const temAlteracao =
-    corteInicio !== (corteInicioInicial ?? '') ||
-    corteFim !== (corteFimInicial ?? '')
-  const temConfig = !!(corteInicioInicial || corteFimInicial)
+  const numerico = valor === '' ? null : parseInt(valor, 10)
+  const invalido = valor !== '' && (isNaN(numerico!) || numerico! < 1 || numerico! > 31)
+  const temAlteracao = numerico !== diaDeCorteInicial
+  const temConfig = diaDeCorteInicial != null
 
   async function handleSalvar() {
+    if (invalido) return
     setSalvando(true)
     try {
       const res = await fetch('/api/configuracao', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          corteInicio: corteInicio || null,
-          corteFim: corteFim || null,
-        }),
+        body: JSON.stringify({ diaDeCorte: numerico }),
       })
       if (!res.ok) {
         const body = await res.json()
@@ -52,12 +48,11 @@ export function ConfiguracaoForm({ corteInicioInicial, corteFimInicial }: Props)
       const res = await fetch('/api/configuracao', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ corteInicio: null, corteFim: null }),
+        body: JSON.stringify({ diaDeCorte: null }),
       })
       if (!res.ok) return
-      setCorteInicio('')
-      setCorteFim('')
-      toast.success('Datas de corte removidas')
+      setValor('')
+      toast.success('Dia de corte removido')
       router.refresh()
     } finally {
       setSalvando(false)
@@ -84,49 +79,42 @@ export function ConfiguracaoForm({ corteInicioInicial, corteFimInicial }: Props)
           <CalendarRange size={16} style={{ color: '#f5c400' }} />
           <div>
             <div className="font-barlow-condensed text-sm font-semibold tracking-wide text-foreground">
-              Data de Corte
+              Dia de Corte Padrão
             </div>
             <div className="font-barlow-condensed text-xs text-muted-foreground">
-              Define o período do ciclo para novos confrontos
+              Dia do mês em que cada ciclo começa (1–31)
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="font-barlow-condensed text-xs tracking-widest uppercase text-muted-foreground block mb-1.5">
-              Início do período
-            </label>
-            <DatePickerField
-              value={corteInicio}
-              onChange={setCorteInicio}
-              placeholder="Sem data de início"
-            />
-          </div>
-          <div>
-            <label className="font-barlow-condensed text-xs tracking-widest uppercase text-muted-foreground block mb-1.5">
-              Fim do período
-            </label>
-            <DatePickerField
-              value={corteFim}
-              onChange={setCorteFim}
-              placeholder="Sem data de fim"
-            />
-          </div>
+        <div className="max-w-[160px]">
+          <Input
+            type="number"
+            min="1"
+            max="31"
+            placeholder="Ex: 15"
+            value={valor}
+            onChange={(e) => setValor(e.target.value)}
+          />
+          {invalido && (
+            <p className="text-sm text-destructive mt-1 font-barlow-condensed">
+              Informe um dia entre 1 e 31
+            </p>
+          )}
         </div>
 
         <p
           className="font-barlow-condensed text-xs leading-relaxed"
           style={{ color: '#555' }}
         >
-          Ao iniciar um confronto, o sistema vincula automaticamente ao ciclo deste período.
-          Sem data configurada, o ciclo é criado com início na data atual.
+          Ao iniciar um confronto, o sistema vincula automaticamente ao ciclo do período atual.
+          Sem dia configurado, o ciclo é criado com início na data atual.
         </p>
 
         <div className="flex items-center gap-2 pt-1">
           <Button
             onClick={handleSalvar}
-            disabled={salvando || !temAlteracao}
+            disabled={salvando || !temAlteracao || invalido}
             className="font-barlow-condensed tracking-wide gap-1.5 disabled:opacity-40"
             style={{ background: '#f5c400', color: '#000' }}
           >
@@ -142,7 +130,7 @@ export function ConfiguracaoForm({ corteInicioInicial, corteFimInicial }: Props)
               className="font-barlow-condensed tracking-wide gap-1.5 text-muted-foreground hover:text-destructive"
             >
               <Trash2 size={13} />
-              Limpar datas
+              Limpar
             </Button>
           )}
         </div>

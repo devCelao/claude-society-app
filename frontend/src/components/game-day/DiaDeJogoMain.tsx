@@ -2,13 +2,15 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Users, Pencil, Play, AlertTriangle, ArrowLeft, Printer } from 'lucide-react'
+import { Users, Pencil, Play, AlertTriangle, ArrowLeft, Printer, ClipboardList } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
+import { useRouter } from 'next/navigation'
 import { format, parse } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { TimeFormado, Partida, StatsJogadores } from './DiaDeJogoFlow'
+import { PartidaAuditoria } from '@/components/partidas/PartidaAuditoria'
 
 type CorTime = 'vermelho' | 'azul' | 'verde' | 'laranja'
 
@@ -52,9 +54,11 @@ const STATUS_LABEL: Record<string, string> = {
 }
 
 export function DiaDeJogoMain({ diaId, data, times, status, partidas, statsJogadores, onEditarTimes, onIniciado }: Props) {
+  const router = useRouter()
   const [iniciando, setIniciando] = useState(false)
   const [confirmSemConfigOpen, setConfirmSemConfigOpen] = useState(false)
   const [dataHoje, setDataHoje] = useState<string | null>(null)
+  const [modoAuditoria, setModoAuditoria] = useState(false)
 
   const totalJogadores = times.reduce((s, t) => s + t.jogadores.length, 0)
   const finalizadas = partidas.filter((p) => p.status === 'FINALIZADA')
@@ -207,9 +211,28 @@ export function DiaDeJogoMain({ diaId, data, times, status, partidas, statsJogad
             </div>
           )}
 
-          {/* FINALIZADO: voltar + imprimir */}
+          {/* FINALIZADO: auditoria + imprimir + voltar */}
           {status === 'FINALIZADO' && (
             <div className="ml-auto flex items-center gap-2">
+              <button
+                onClick={() => {
+                  if (modoAuditoria) { setModoAuditoria(false); router.refresh() }
+                  else setModoAuditoria(true)
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-barlow-condensed text-xs tracking-wide border transition-colors"
+                style={
+                  modoAuditoria
+                    ? { borderColor: '#f5c400', color: '#f5c400', background: 'rgba(245,196,0,0.06)' }
+                    : { borderColor: '#333', color: '#888', background: 'transparent' }
+                }
+                onMouseEnter={(e) => { e.currentTarget.style.color = '#f5c400'; e.currentTarget.style.borderColor = '#f5c400' }}
+                onMouseLeave={(e) => {
+                  if (!modoAuditoria) { e.currentTarget.style.color = '#888'; e.currentTarget.style.borderColor = '#333' }
+                }}
+              >
+                <ClipboardList size={12} />
+                {modoAuditoria ? 'Fechar Auditoria' : 'Auditoria'}
+              </button>
               <button
                 onClick={() => window.print()}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-barlow-condensed text-xs tracking-wide border transition-colors"
@@ -327,6 +350,21 @@ export function DiaDeJogoMain({ diaId, data, times, status, partidas, statsJogad
           )
         })()}
       </div>
+
+      {/* Auditoria — visível só quando FINALIZADO e modoAuditoria ativo */}
+      {modoAuditoria && status === 'FINALIZADO' && (
+        <div className="space-y-3">
+          <h2 className="font-bebas text-2xl tracking-widest" style={{ color: '#fb923c' }}>AUDITORIA</h2>
+          {finalizadas.length === 0 && (
+            <div className="rounded-xl border p-6 text-center font-barlow-condensed text-sm text-muted-foreground" style={{ borderColor: '#242424', borderStyle: 'dashed' }}>
+              Nenhuma partida para auditar
+            </div>
+          )}
+          {finalizadas.map((p) => (
+            <PartidaAuditoria key={p.id} diaId={diaId} partida={p} times={times} />
+          ))}
+        </div>
+      )}
 
       {/* Modal: sem configuração de datas (screen only) */}
       <Dialog open={confirmSemConfigOpen} onOpenChange={setConfirmSemConfigOpen}>

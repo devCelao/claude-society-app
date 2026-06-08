@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { calcularPeriodoCiclo } from '@/lib/utils'
 import { CicloUpdateSchema, nomeDoCiclo } from '@/lib/validations/ciclo'
 
 export type StatJogador = {
@@ -134,18 +135,32 @@ export async function PATCH(
     const ciclo = await prisma.ciclo.findUnique({ where: { id: cicloId } })
     if (!ciclo) return NextResponse.json({ error: 'Ciclo nao encontrado' }, { status: 404 })
 
-    const { inicioEm, fimEm } = result.data
+    const { diaDeCorte, mesReferencia } = result.data
+
+    let updateData: {
+      nome?: string
+      diaDeCorte?: number
+      inicioEm?: Date
+      fimEm?: Date
+    } = {}
+
+    if (diaDeCorte !== undefined && mesReferencia !== undefined) {
+      const [ano, mes] = mesReferencia.split('-').map(Number)
+      const { inicioEm, fimEm } = calcularPeriodoCiclo(diaDeCorte, mes, ano)
+      updateData = { nome: nomeDoCiclo(inicioEm), diaDeCorte, inicioEm, fimEm }
+    } else if (diaDeCorte !== undefined) {
+      updateData = { diaDeCorte }
+    }
+
     const atualizado = await prisma.ciclo.update({
       where: { id: cicloId },
-      data: {
-        ...(inicioEm && { nome: nomeDoCiclo(inicioEm), inicioEm: new Date(inicioEm + 'T12:00:00') }),
-        ...(fimEm !== undefined && { fimEm: fimEm ? new Date(fimEm + 'T12:00:00') : null }),
-      },
+      data: updateData,
     })
 
     return NextResponse.json({
       id: atualizado.id,
       nome: atualizado.nome,
+      diaDeCorte: atualizado.diaDeCorte,
       inicioEm: atualizado.inicioEm.toISOString().split('T')[0],
       fimEm: atualizado.fimEm ? atualizado.fimEm.toISOString().split('T')[0] : null,
     })
