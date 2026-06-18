@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { Shuffle, ChevronDown, ArrowLeft, Plus, Minus, X } from 'lucide-react'
 import type { Jogador, TimeFormado } from './DiaDeJogoFlow'
-import { POSICAO_SIGLA } from './DiaDeJogoFlow'
 
 type CorTime = 'vermelho' | 'azul' | 'verde' | 'laranja'
 
@@ -310,7 +309,7 @@ export function MontarTimes({ data, jogadoresSelecionados, timesIniciais, onFech
                                 className="font-barlow-condensed text-[10px] font-bold tracking-wider px-1 py-0.5 rounded"
                                 style={{ background: 'rgba(255,255,255,0.06)', color: '#aaaaaa' }}
                               >
-                                {POSICAO_SIGLA[j.posicaoPrimaria] ?? j.posicaoPrimaria}
+                                {j.posicaoPrimaria.sigla}
                               </span>
                             )}
                             {j.posicaoSecundaria && (
@@ -318,7 +317,7 @@ export function MontarTimes({ data, jogadoresSelecionados, timesIniciais, onFech
                                 className="font-barlow-condensed text-[10px] tracking-wider px-1 py-0.5 rounded opacity-60"
                                 style={{ background: 'rgba(255,255,255,0.04)', color: '#888888' }}
                               >
-                                {POSICAO_SIGLA[j.posicaoSecundaria] ?? j.posicaoSecundaria}
+                                {j.posicaoSecundaria.sigla}
                               </span>
                             )}
                             {j.convidado && (

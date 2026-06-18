@@ -9,6 +9,10 @@ export async function GET(req: NextRequest) {
     const jogadores = await prisma.jogador.findMany({
       where: incluirSuspensos ? {} : { deletedAt: null },
       orderBy: { nome: 'asc' },
+      include: {
+        posicaoPrimaria: { select: { id: true, nome: true, sigla: true, cor: true } },
+        posicaoSecundaria: { select: { id: true, nome: true, sigla: true, cor: true } },
+      },
     })
 
     return NextResponse.json(jogadores)

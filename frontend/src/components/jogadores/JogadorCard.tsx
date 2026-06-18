@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Pencil, UserX, UserCheck } from 'lucide-react'
-import { Jogador } from '@/types'
+import { JogadorComPosicoes } from '@/types'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,16 +17,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
-
-const POSITION_STYLES: Record<string, { color: string; bg: string; label: string }> = {
-  GOLEIRO:   { color: '#f5c400', bg: '#1e1800', label: 'Goleiro' },
-  ZAGUEIRO:  { color: '#60a5fa', bg: '#07142a', label: 'Zagueiro' },
-  LATERAL:   { color: '#67e8f9', bg: '#051820', label: 'Lateral' },
-  VOLANTE:   { color: '#c084fc', bg: '#130430', label: 'Volante' },
-  MEIA:      { color: '#a78bfa', bg: '#0d0520', label: 'Meia' },
-  ATACANTE:  { color: '#fb923c', bg: '#1e0e00', label: 'Atacante' },
-  PONTA:     { color: '#f87171', bg: '#1e0606', label: 'Ponta' },
-}
 
 const AVATAR_PALETTE = [
   { bg: '#1e1800', color: '#f5c400' },
@@ -47,7 +37,7 @@ function initials(name: string) {
 }
 
 interface Props {
-  jogador: Jogador
+  jogador: JogadorComPosicoes
   suspenso?: boolean
   onReativar?: (id: number) => void
   onSuspender?: () => void
@@ -60,8 +50,8 @@ export function JogadorCard({ jogador, suspenso = false, onReativar, onSuspender
   const [hovered, setHovered] = useState(false)
 
   const avatar = AVATAR_PALETTE[jogador.id % AVATAR_PALETTE.length]
-  const posEstilo = jogador.posicaoPrimaria ? (POSITION_STYLES[jogador.posicaoPrimaria] ?? null) : null
-  const posSecEstilo = jogador.posicaoSecundaria ? (POSITION_STYLES[jogador.posicaoSecundaria] ?? null) : null
+  const posEstilo = jogador.posicaoPrimaria
+  const posSecEstilo = jogador.posicaoSecundaria
   const temLinha2 = jogador.apelido || posEstilo || posSecEstilo || jogador.convidado || suspenso
 
   async function handleSuspender() {
@@ -207,24 +197,26 @@ export function JogadorCard({ jogador, suspenso = false, onReativar, onSuspender
               <span
                 className="font-barlow-condensed text-[10px] font-semibold tracking-wide px-1.5 py-0.5 rounded"
                 style={{
-                  background: posEstilo.bg,
-                  color: posEstilo.color,
-                  border: `1px solid ${posEstilo.color}22`,
+                  background: `${posEstilo.cor}14`,
+                  color: posEstilo.cor,
+                  border: `1px solid ${posEstilo.cor}22`,
                 }}
+                title={posEstilo.nome}
               >
-                {posEstilo.label.toUpperCase()}
+                {posEstilo.sigla}
               </span>
             )}
             {posSecEstilo && (
               <span
                 className="font-barlow-condensed text-[10px] font-medium tracking-wide px-1.5 py-0.5 rounded opacity-70"
                 style={{
-                  background: posSecEstilo.bg,
-                  color: posSecEstilo.color,
-                  border: `1px solid ${posSecEstilo.color}18`,
+                  background: `${posSecEstilo.cor}10`,
+                  color: posSecEstilo.cor,
+                  border: `1px solid ${posSecEstilo.cor}18`,
                 }}
+                title={posSecEstilo.nome}
               >
-                {posSecEstilo.label.toUpperCase()}
+                {posSecEstilo.sigla}
               </span>
             )}
             {jogador.convidado && (
