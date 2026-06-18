@@ -9,23 +9,15 @@ import { DiaDeJogoMain } from './DiaDeJogoMain'
 
 type CorTime = 'vermelho' | 'azul' | 'verde' | 'laranja'
 
+export type PosicaoSigla = { sigla: string } | null
+
 export type Jogador = {
   id: number
   nome: string
   apelido: string | null
   convidado: boolean
-  posicaoPrimaria: string | null
-  posicaoSecundaria: string | null
-}
-
-export const POSICAO_SIGLA: Record<string, string> = {
-  GOLEIRO:  'GOL',
-  ZAGUEIRO: 'ZAG',
-  LATERAL:  'LAT',
-  VOLANTE:  'VOL',
-  MEIA:     'MEI',
-  ATACANTE: 'ATA',
-  PONTA:    'PON',
+  posicaoPrimaria: PosicaoSigla
+  posicaoSecundaria: PosicaoSigla
 }
 
 export type TimeFormado = {

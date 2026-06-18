@@ -4,7 +4,8 @@ import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { JogadorSchema, POSICOES_JOGADOR, type JogadorInput, type PosicaoJogadorValue } from '@/lib/validations/jogador'
+import { JogadorSchema, type JogadorInput } from '@/lib/validations/jogador'
+import type { PosicaoResumo } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -17,22 +18,13 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-const POSICAO_LABELS: Record<PosicaoJogadorValue, string> = {
-  GOLEIRO: 'Goleiro',
-  ZAGUEIRO: 'Zagueiro',
-  LATERAL: 'Lateral',
-  VOLANTE: 'Volante',
-  MEIA: 'Meia',
-  ATACANTE: 'Atacante',
-  PONTA: 'Ponta',
-}
-
 interface Props {
   jogadorId?: number
   defaultValues?: Partial<JogadorInput>
+  posicoes: PosicaoResumo[]
 }
 
-export function JogadorForm({ jogadorId, defaultValues }: Props) {
+export function JogadorForm({ jogadorId, defaultValues, posicoes }: Props) {
   const router = useRouter()
   const {
     register,
@@ -91,28 +83,34 @@ export function JogadorForm({ jogadorId, defaultValues }: Props) {
           <Label>Posicao primaria</Label>
           <Controller
             control={control}
-            name="posicaoPrimaria"
+            name="posicaoPrimariaId"
             render={({ field }) => (
               <Select
-                value={field.value ?? ''}
-                onValueChange={(val) => field.onChange(val || null)}
+                value={field.value != null ? String(field.value) : ''}
+                onValueChange={(val) => field.onChange(val ? Number(val) : null)}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Selecione..." />
+                  <SelectValue placeholder="Selecione...">
+                    {(value) =>
+                      value
+                        ? posicoes.find((p) => String(p.id) === String(value))?.nome ?? 'Selecione...'
+                        : 'Selecione...'
+                    }
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">—</SelectItem>
-                  {POSICOES_JOGADOR.map((p) => (
-                    <SelectItem key={p} value={p}>
-                      {POSICAO_LABELS[p]}
+                  {posicoes.map((p) => (
+                    <SelectItem key={p.id} value={String(p.id)}>
+                      {p.nome}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             )}
           />
-          {errors.posicaoPrimaria && (
-            <p className="text-sm text-destructive">{errors.posicaoPrimaria.message}</p>
+          {errors.posicaoPrimariaId && (
+            <p className="text-sm text-destructive">{errors.posicaoPrimariaId.message}</p>
           )}
         </div>
 
@@ -120,28 +118,34 @@ export function JogadorForm({ jogadorId, defaultValues }: Props) {
           <Label>Posicao secundaria</Label>
           <Controller
             control={control}
-            name="posicaoSecundaria"
+            name="posicaoSecundariaId"
             render={({ field }) => (
               <Select
-                value={field.value ?? ''}
-                onValueChange={(val) => field.onChange(val || null)}
+                value={field.value != null ? String(field.value) : ''}
+                onValueChange={(val) => field.onChange(val ? Number(val) : null)}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Selecione..." />
+                  <SelectValue placeholder="Selecione...">
+                    {(value) =>
+                      value
+                        ? posicoes.find((p) => String(p.id) === String(value))?.nome ?? 'Selecione...'
+                        : 'Selecione...'
+                    }
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">—</SelectItem>
-                  {POSICOES_JOGADOR.map((p) => (
-                    <SelectItem key={p} value={p}>
-                      {POSICAO_LABELS[p]}
+                  {posicoes.map((p) => (
+                    <SelectItem key={p.id} value={String(p.id)}>
+                      {p.nome}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             )}
           />
-          {errors.posicaoSecundaria && (
-            <p className="text-sm text-destructive">{errors.posicaoSecundaria.message}</p>
+          {errors.posicaoSecundariaId && (
+            <p className="text-sm text-destructive">{errors.posicaoSecundariaId.message}</p>
           )}
         </div>
       </div>

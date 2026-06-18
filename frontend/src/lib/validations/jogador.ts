@@ -1,17 +1,5 @@
 import { z } from 'zod'
 
-export const POSICOES_JOGADOR = [
-  'GOLEIRO',
-  'ZAGUEIRO',
-  'LATERAL',
-  'VOLANTE',
-  'MEIA',
-  'ATACANTE',
-  'PONTA',
-] as const
-
-export type PosicaoJogadorValue = (typeof POSICOES_JOGADOR)[number]
-
 export const JogadorSchema = z.object({
   nome: z
     .string({ error: 'Nome e obrigatorio' })
@@ -22,8 +10,8 @@ export const JogadorSchema = z.object({
     .max(50, 'Apelido deve ter no maximo 50 caracteres')
     .optional()
     .nullable(),
-  posicaoPrimaria: z.enum(POSICOES_JOGADOR).optional().nullable(),
-  posicaoSecundaria: z.enum(POSICOES_JOGADOR).optional().nullable(),
+  posicaoPrimariaId: z.number().int().positive().optional().nullable(),
+  posicaoSecundariaId: z.number().int().positive().optional().nullable(),
   convidado: z.boolean(),
 })
 

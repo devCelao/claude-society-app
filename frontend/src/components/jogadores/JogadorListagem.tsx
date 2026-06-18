@@ -2,17 +2,17 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Search, X, Eye, EyeOff, Plus } from 'lucide-react'
-import { Jogador } from '@/types'
+import { Search, X, Eye, EyeOff, Plus, MapPin } from 'lucide-react'
+import { JogadorComPosicoes } from '@/types'
 import { JogadorCard } from './JogadorCard'
 
 interface Props {
-  jogadoresIniciais: Jogador[]
+  jogadoresIniciais: JogadorComPosicoes[]
 }
 
 export function JogadorListagem({ jogadoresIniciais }: Props) {
   const [mostrarSuspensos, setMostrarSuspensos] = useState(false)
-  const [suspensos, setSuspensos] = useState<Jogador[]>([])
+  const [suspensos, setSuspensos] = useState<JogadorComPosicoes[]>([])
   const [carregandoSuspensos, setCarregandoSuspensos] = useState(false)
   const [busca, setBusca] = useState('')
 
@@ -23,7 +23,7 @@ export function JogadorListagem({ jogadoresIniciais }: Props) {
       setCarregandoSuspensos(true)
       try {
         const res = await fetch('/api/jogadores?incluirSuspensos=true')
-        const todos: Jogador[] = await res.json()
+        const todos: JogadorComPosicoes[] = await res.json()
         setSuspensos(todos.filter((j) => j.deletedAt !== null))
       } finally {
         setCarregandoSuspensos(false)
@@ -38,7 +38,7 @@ export function JogadorListagem({ jogadoresIniciais }: Props) {
   async function onSuspender() {
     if (!mostrarSuspensos) return
     const res = await fetch('/api/jogadores?incluirSuspensos=true')
-    const todos: Jogador[] = await res.json()
+    const todos: JogadorComPosicoes[] = await res.json()
     setSuspensos(todos.filter((j) => j.deletedAt !== null))
   }
 
@@ -88,6 +88,16 @@ export function JogadorListagem({ jogadoresIniciais }: Props) {
             </button>
           )}
         </div>
+
+        <Link
+          href="/configuracao/posicoes"
+          title="Cadastrar posições"
+          className="flex items-center gap-1.5 px-4 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide transition-colors hover:border-gold-dim flex-shrink-0"
+          style={{ background: '#111111', border: '1px solid #242424', color: '#f5c400' }}
+        >
+          <MapPin size={16} />
+          <span className="hidden md:inline">Posições</span>
+        </Link>
 
         <Link
           href="/jogadores/novo"

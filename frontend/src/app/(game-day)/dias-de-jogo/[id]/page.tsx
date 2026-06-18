@@ -18,7 +18,7 @@ export default async function DiaDeJogoPage({
       times: {
         include: {
           jogadorTimes: {
-            include: { jogador: { select: { id: true, nome: true, apelido: true, convidado: true, posicaoPrimaria: true, posicaoSecundaria: true } } },
+            include: { jogador: { select: { id: true, nome: true, apelido: true, convidado: true, posicaoPrimaria: { select: { sigla: true } }, posicaoSecundaria: { select: { sigla: true } } } } },
           },
         },
       },
@@ -38,7 +38,7 @@ export default async function DiaDeJogoPage({
   const todosJogadores: Jogador[] = await prisma.jogador.findMany({
     where: { deletedAt: null },
     orderBy: { nome: 'asc' },
-    select: { id: true, nome: true, apelido: true, convidado: true, posicaoPrimaria: true, posicaoSecundaria: true },
+    select: { id: true, nome: true, apelido: true, convidado: true, posicaoPrimaria: { select: { sigla: true } }, posicaoSecundaria: { select: { sigla: true } } },
   })
 
   // passo='times' com times formados = usuário está editando; qualquer outro caso com times=3 é 'principal'

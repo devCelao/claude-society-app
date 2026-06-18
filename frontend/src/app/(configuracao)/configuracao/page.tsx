@@ -9,9 +9,7 @@ export default async function ConfiguracaoPage() {
 
   return (
     <main className="p-6">
-      <ConfiguracaoForm
-        diaDeCorteInicial={config?.diaDeCorte ?? null}
-      />
+      <ConfiguracaoForm diaDeCorteInicial={config?.diaDeCorte ?? null} />
     </main>
   )
 }

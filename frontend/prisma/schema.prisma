@@ -24,28 +24,37 @@ enum StatusPartida {
   FINALIZADA
 }
 
-enum PosicaoJogador {
-  GOLEIRO
-  ZAGUEIRO
-  LATERAL
-  VOLANTE
-  MEIA
-  ATACANTE
-  PONTA
-}
-
 // ─── Models ──────────────────────────────────────────────────────────────────
 
+model Posicao {
+  id        Int      @id @default(autoincrement())
+  nome      String   @unique @db.VarChar(50)
+  sigla     String   @db.VarChar(5)
+  cor       String   @db.VarChar(9)
+  ativo     Boolean  @default(true)
+  ordem     Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  jogadoresPrimaria   Jogador[] @relation("PosicaoPrimaria")
+  jogadoresSecundaria Jogador[] @relation("PosicaoSecundaria")
+
+  @@map("posicoes")
+}
+
 model Jogador {
-  id         Int       @id @default(autoincrement())
-  nome       String    @db.VarChar(100)
-  apelido    String?   @db.VarChar(50)
-  posicaoPrimaria   PosicaoJogador? @map("posicao_primaria")
-  posicaoSecundaria PosicaoJogador? @map("posicao_secundaria")
-  convidado  Boolean   @default(false)
-  deletedAt  DateTime? @map("deleted_at")
-  createdAt  DateTime  @default(now()) @map("created_at")
-  updatedAt  DateTime  @updatedAt @map("updated_at")
+  id                  Int       @id @default(autoincrement())
+  nome                String    @db.VarChar(100)
+  apelido             String?   @db.VarChar(50)
+  posicaoPrimariaId   Int?      @map("posicao_primaria_id")
+  posicaoSecundariaId Int?      @map("posicao_secundaria_id")
+  convidado           Boolean   @default(false)
+  deletedAt           DateTime? @map("deleted_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  posicaoPrimaria   Posicao? @relation("PosicaoPrimaria", fields: [posicaoPrimariaId], references: [id])
+  posicaoSecundaria Posicao? @relation("PosicaoSecundaria", fields: [posicaoSecundariaId], references: [id])
 
   jogadorTimes JogadorTime[]
   gols         Gol[]
