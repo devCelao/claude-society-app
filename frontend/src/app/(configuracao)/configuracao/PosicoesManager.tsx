@@ -167,7 +167,7 @@ export function PosicoesManager({ posicoesIniciais }: Props) {
                       value={edit.sigla}
                       onChange={(e) => setEdit((s) => ({ ...s, sigla: e.target.value }))}
                       placeholder="SIG"
-                      maxLength={5}
+                      maxLength={3}
                       className="h-9 w-20 uppercase flex-shrink-0"
                     />
                     <Button
