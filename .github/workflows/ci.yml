@@ -24,3 +24,5 @@ jobs:
       - run: npm run lint
       - run: npm run type-check
       - run: npm run build
+        env:
+          DATABASE_URL: mysql://ci_user:ci_pass@localhost:3306/ci_db
