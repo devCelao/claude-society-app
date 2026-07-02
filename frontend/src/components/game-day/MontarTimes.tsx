@@ -23,7 +23,7 @@ interface Props {
   data: string
   jogadoresSelecionados: Jogador[]
   timesIniciais: TimeFormado[]
-  onFechar: (times: TimeFormado[]) => Promise<void>
+  onFechar: () => Promise<void>
   onVoltar: () => void
 }
 
@@ -56,10 +56,11 @@ function timesFromIniciais(iniciais: TimeFormado[], padroes: CorTime[]): TimeSta
   ]
 }
 
-export function MontarTimes({ data, jogadoresSelecionados, timesIniciais, onFechar, onVoltar }: Props) {
+export function MontarTimes({ diaId, data, jogadoresSelecionados, timesIniciais, onFechar, onVoltar }: Props) {
   const [times, setTimes] = useState<TimeState[]>(() => timesFromIniciais(timesIniciais, DEFAULT_CORES))
   const [adicionandoAoTime, setAdicionandoAoTime] = useState<number | null>(null)
   const [salvando, setSalvando] = useState(false)
+  const [sincronizando, setSincronizando] = useState(false)
 
   const totalDistribuidos = times.reduce((s, t) => s + t.jogadores.length, 0)
   const todosDistribuidos = totalDistribuidos === jogadoresSelecionados.length && jogadoresSelecionados.length > 0
@@ -68,42 +69,83 @@ export function MontarTimes({ data, jogadoresSelecionados, timesIniciais, onFech
   const idsNoTime = new Set(times.flatMap((t) => t.jogadores.map((j) => j.id)))
   const disponiveis = jogadoresSelecionados.filter((j) => !idsNoTime.has(j.id))
 
+  async function sincronizar(novosTimes: TimeState[]) {
+    setSincronizando(true)
+    try {
+      const res = await fetch(`/api/dias-de-jogo/${diaId}/times`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          times: novosTimes.map((t) => ({ nome: t.nome, cor: t.cor, jogadorIds: t.jogadores.map((j) => j.id) })),
+        }),
+      })
+      if (!res.ok) {
+        const erro = await res.json().catch(() => null)
+        throw new Error(erro?.error ?? 'Erro ao salvar time')
+      }
+    } finally {
+      setSincronizando(false)
+    }
+  }
+
   function sortear() {
+    const anterior = times
     const [g1, g2, g3] = distribuir(jogadoresSelecionados)
-    setTimes((prev) => [
-      { ...prev[0], jogadores: g1 },
-      { ...prev[1], jogadores: g2 },
-      { ...prev[2], jogadores: g3 },
-    ])
+    const novo = [
+      { ...times[0], jogadores: g1 },
+      { ...times[1], jogadores: g2 },
+      { ...times[2], jogadores: g3 },
+    ]
+    setTimes(novo)
     setAdicionandoAoTime(null)
+    sincronizar(novo).catch(() => {
+      setTimes(anterior)
+      toast.error('Erro ao sortear times')
+    })
   }
 
   function setCor(timeIdx: number, cor: CorTime) {
-    setTimes((prev) => prev.map((t, i) => (i === timeIdx ? { ...t, cor } : t)))
+    const anterior = times
+    const novo = times.map((t, i) => (i === timeIdx ? { ...t, cor } : t))
+    setTimes(novo)
+    sincronizar(novo).catch(() => {
+      setTimes(anterior)
+      toast.error('Erro ao salvar cor do time')
+    })
   }
 
   function adicionarJogador(timeIdx: number, jogador: Jogador) {
-    setTimes((prev) =>
-      prev.map((t, i) => (i === timeIdx ? { ...t, jogadores: [...t.jogadores, jogador] } : t))
+    const anterior = times
+    const novo = times.map((t, i) =>
+      i === timeIdx ? { ...t, jogadores: [...t.jogadores, jogador] } : t
     )
+    setTimes(novo)
     // Fecha o painel se todos foram distribuídos
     const restantes = disponiveis.filter((j) => j.id !== jogador.id)
     if (restantes.length === 0) setAdicionandoAoTime(null)
+    sincronizar(novo).catch(() => {
+      setTimes(anterior)
+      toast.error('Erro ao adicionar jogador')
+    })
   }
 
   function removerJogador(timeIdx: number, jogadorId: number) {
-    setTimes((prev) =>
-      prev.map((t, i) =>
-        i === timeIdx ? { ...t, jogadores: t.jogadores.filter((j) => j.id !== jogadorId) } : t
-      )
+    const anterior = times
+    const novo = times.map((t, i) =>
+      i === timeIdx ? { ...t, jogadores: t.jogadores.filter((j) => j.id !== jogadorId) } : t
     )
+    setTimes(novo)
+    sincronizar(novo).catch(() => {
+      setTimes(anterior)
+      toast.error('Erro ao remover jogador')
+    })
   }
 
   async function fecharTimes() {
     if (!todosDistribuidos) { toast.error('Distribua todos os jogadores antes de fechar'); return }
     setSalvando(true)
     try {
-      await onFechar(times)
+      await onFechar()
     } finally {
       setSalvando(false)
     }
@@ -145,6 +187,9 @@ export function MontarTimes({ data, jogadoresSelecionados, timesIniciais, onFech
             <span className="font-barlow-condensed text-xs" style={{ color: '#f87171' }}>
               {disponiveis.length} sem time
             </span>
+          )}
+          {sincronizando && (
+            <span className="font-barlow-condensed text-xs text-muted-foreground">Salvando...</span>
           )}
         </div>
         <div className="flex gap-2">

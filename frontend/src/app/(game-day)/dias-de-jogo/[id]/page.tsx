@@ -41,10 +41,9 @@ export default async function DiaDeJogoPage({
     select: { id: true, nome: true, apelido: true, convidado: true, posicaoPrimaria: { select: { sigla: true } }, posicaoSecundaria: { select: { sigla: true } } },
   })
 
-  // passo='times' com times formados = usuário está editando; qualquer outro caso com times=3 é 'principal'
-  const passoDB = dia.passo as 'lista' | 'times' | 'principal'
-  const passo: 'lista' | 'times' | 'principal' =
-    dia.times.length === 3 && passoDB !== 'times' ? 'principal' : passoDB
+  // Times/jogador_time agora persistem incrementalmente durante 'lista' e 'times' (autosave),
+  // entao o passo real do fluxo e sempre o que esta salvo em dia.passo.
+  const passo: 'lista' | 'times' | 'principal' = dia.passo as 'lista' | 'times' | 'principal'
 
   let jogadoresSelecionados: Jogador[]
   if (passo === 'principal') {

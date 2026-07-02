@@ -75,6 +75,12 @@ export function DiaDeJogoFlow({
   const [status, setStatus] = useState(statusInicial)
   const [partidas] = useState<Partida[]>(partidasIniciais)
 
+  async function fetchTimesAtualizados(): Promise<TimeFormado[] | null> {
+    const res = await fetch(`/api/dias-de-jogo/${diaId}/times`)
+    if (!res.ok) return null
+    return res.json()
+  }
+
   async function handleFecharLista(jogadores: Jogador[]) {
     const res = await fetch(`/api/dias-de-jogo/${diaId}`, {
       method: 'PATCH',
@@ -85,6 +91,9 @@ export function DiaDeJogoFlow({
       toast.error('Erro ao salvar lista de jogadores')
       return
     }
+    // Recarrega os times do banco: reflete jogadores removidos da lista e times ja montados
+    const timesAtualizados = await fetchTimesAtualizados()
+    if (timesAtualizados) setTimes(timesAtualizados)
     setJogadoresSelecionados(jogadores)
     setPasso('times')
     router.refresh()
@@ -101,29 +110,25 @@ export function DiaDeJogoFlow({
       toast.error('Erro ao voltar para a lista')
       return
     }
-    setTimes([])
+    // Times ja montados sao preservados no banco (autosave) - mantem o estado local tambem
     setPasso('lista')
     router.refresh()
   }
 
-  async function handleFecharTimes(timesFormados: TimeFormado[]) {
+  async function handleFecharTimes() {
+    // Times/jogadores ja foram persistidos incrementalmente; aqui so avanca o passo
     const res = await fetch(`/api/dias-de-jogo/${diaId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        passo: 'principal',
-        times: timesFormados.map((t) => ({
-          nome: t.nome,
-          cor: t.cor,
-          jogadorIds: t.jogadores.map((j) => j.id),
-        })),
-      }),
+      body: JSON.stringify({ passo: 'principal' }),
     })
     if (!res.ok) {
-      toast.error('Erro ao salvar times')
+      const erro = await res.json().catch(() => null)
+      toast.error(erro?.error ?? 'Erro ao salvar times')
       return
     }
-    setTimes(timesFormados)
+    const timesAtualizados = await fetchTimesAtualizados()
+    if (timesAtualizados) setTimes(timesAtualizados)
     setPasso('principal')
     router.refresh()
     toast.success('Times formados! Boa pelada!')

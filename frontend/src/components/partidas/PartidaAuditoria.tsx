@@ -11,7 +11,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { TimeFormado, Partida } from '@/components/game-day/DiaDeJogoFlow'
+type JogadorMin = { id: number; nome: string }
+type TimeMin = { id?: number; nome: string; cor: string; jogadores: JogadorMin[] }
+type PartidaMin = { id: number }
 
 type GolAudit = {
   id: number
@@ -41,8 +43,8 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
 interface Props {
   diaId: number
-  partida: Partida
-  times: TimeFormado[]
+  partida: PartidaMin
+  times: TimeMin[]
 }
 
 export function PartidaAuditoria({ diaId, partida, times }: Props) {
@@ -51,7 +53,8 @@ export function PartidaAuditoria({ diaId, partida, times }: Props) {
     fetcher
   )
 
-  const [editAssistGolId, setEditAssistGolId] = useState<number | null>(null)
+  const [editGolId, setEditGolId] = useState<number | null>(null)
+  const [editJogadorValue, setEditJogadorValue] = useState<string>('')
   const [assistValue, setAssistValue] = useState<string>('')
   const [adicionando, setAdicionando] = useState(false)
   const [novoTimeId, setNovoTimeId] = useState<string>('')
@@ -110,7 +113,11 @@ export function PartidaAuditoria({ diaId, partida, times }: Props) {
     }
   }
 
-  async function handleSalvarAssist(golId: number) {
+  async function handleSalvarGol(golId: number) {
+    if (!editJogadorValue) {
+      toast.error('Selecione o jogador')
+      return
+    }
     setCarregando(true)
     try {
       const assistId = assistValue === '' || assistValue === 'none' ? null : parseInt(assistValue, 10)
@@ -119,17 +126,17 @@ export function PartidaAuditoria({ diaId, partida, times }: Props) {
         {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ assistenciaJogadorId: assistId }),
+          body: JSON.stringify({ jogadorId: parseInt(editJogadorValue, 10), assistenciaJogadorId: assistId }),
         }
       )
       if (!res.ok) {
         const b = await res.json()
-        toast.error(b.error ?? 'Erro ao salvar assistencia')
+        toast.error(b.error ?? 'Erro ao salvar gol')
         return
       }
-      setEditAssistGolId(null)
+      setEditGolId(null)
       await mutate()
-      toast.success('Assistencia atualizada')
+      toast.success('Gol atualizado')
     } finally {
       setCarregando(false)
     }
@@ -203,7 +210,9 @@ export function PartidaAuditoria({ diaId, partida, times }: Props) {
         )}
         {data.gols.map((gol) => {
           const corTime = gol.timeId === data.timeAId ? hexA : hexB
-          const isEditandoAssist = editAssistGolId === gol.id
+          const isEditando = editGolId === gol.id
+          const jogadoresTimeGol = jogadoresDoTime(gol.timeId)
+          const jogadoresParaAssist = jogadoresTimeGol.filter((j) => String(j.id) !== editJogadorValue)
 
           return (
             <div key={gol.id} className="px-4 py-2.5 space-y-1.5">
@@ -213,18 +222,19 @@ export function PartidaAuditoria({ diaId, partida, times }: Props) {
                 <span className="flex-1 font-barlow-condensed text-sm text-foreground truncate">
                   {gol.jogador.nome}
                 </span>
-                {/* Botão editar assistência */}
+                {/* Botão editar gol (jogador + assistência) */}
                 <button
                   onClick={() => {
-                    setEditAssistGolId(isEditandoAssist ? null : gol.id)
+                    setEditGolId(isEditando ? null : gol.id)
+                    setEditJogadorValue(String(gol.jogador.id))
                     setAssistValue(gol.assistencia ? String(gol.assistencia.jogador.id) : '')
                   }}
                   disabled={carregando}
-                  title="Editar assistência"
+                  title="Editar gol"
                   className="p-1 rounded transition-colors flex-shrink-0"
-                  style={{ color: gol.assistencia ? '#3b82f6' : '#444' }}
-                  onMouseEnter={(e) => (e.currentTarget.style.color = '#3b82f6')}
-                  onMouseLeave={(e) => (e.currentTarget.style.color = gol.assistencia ? '#3b82f6' : '#444')}
+                  style={{ color: isEditando ? '#f5c400' : '#444' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = '#f5c400')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = isEditando ? '#f5c400' : '#444')}
                 >
                   <Pencil size={12} />
                 </button>
@@ -243,47 +253,67 @@ export function PartidaAuditoria({ diaId, partida, times }: Props) {
               </div>
 
               {/* Linha de assistência (se houver) */}
-              {gol.assistencia && !isEditandoAssist && (
+              {gol.assistencia && !isEditando && (
                 <div className="pl-[18px] font-barlow-condensed text-xs" style={{ color: '#3b82f6' }}>
                   🎯 {gol.assistencia.jogador.nome}
                 </div>
               )}
 
-              {/* Editor de assistência inline */}
-              {isEditandoAssist && (
-                <div className="pl-[18px] flex items-center gap-2">
-                  <Select value={assistValue} onValueChange={(v) => setAssistValue(v ?? '')}>
-                    <SelectTrigger className="h-7 text-xs flex-1 min-w-0" style={{ fontSize: '12px' }}>
-                      <SelectValue placeholder="Sem assistência" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">— Sem assistência</SelectItem>
-                      {jogadoresDoTime(gol.timeId)
-                        .filter((j) => j.id !== gol.jogador.id)
-                        .map((j) => (
+              {/* Editor inline: jogador + assistência */}
+              {isEditando && (
+                <div className="pl-[18px] space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <Select value={editJogadorValue} onValueChange={(v) => setEditJogadorValue(v ?? '')}>
+                      <SelectTrigger className="h-7 text-xs flex-1 min-w-0" style={{ fontSize: '12px' }}>
+                        <SelectValue placeholder="Jogador">
+                          {(value) => jogadoresTimeGol.find((j) => String(j.id) === String(value))?.nome ?? 'Jogador'}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {jogadoresTimeGol.map((j) => (
                           <SelectItem key={j.id} value={String(j.id)}>
                             {j.nome}
                           </SelectItem>
                         ))}
+                      </SelectContent>
+                    </Select>
+                    <button
+                      onClick={() => handleSalvarGol(gol.id)}
+                      disabled={carregando}
+                      className="p-1.5 rounded flex-shrink-0 transition-colors"
+                      style={{ background: 'rgba(74,222,128,0.1)', color: '#4ade80' }}
+                      title="Confirmar"
+                    >
+                      <Check size={13} />
+                    </button>
+                    <button
+                      onClick={() => setEditGolId(null)}
+                      className="p-1.5 rounded flex-shrink-0 transition-colors"
+                      style={{ color: '#555' }}
+                      title="Cancelar"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                  <Select value={assistValue} onValueChange={(v) => setAssistValue(v ?? '')}>
+                    <SelectTrigger className="h-7 text-xs w-full" style={{ fontSize: '12px' }}>
+                      <SelectValue placeholder="Sem assistência">
+                        {(value) =>
+                          value && value !== 'none'
+                            ? jogadoresParaAssist.find((j) => String(j.id) === String(value))?.nome ?? 'Sem assistência'
+                            : 'Sem assistência'
+                        }
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">— Sem assistência</SelectItem>
+                      {jogadoresParaAssist.map((j) => (
+                        <SelectItem key={j.id} value={String(j.id)}>
+                          {j.nome}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
-                  <button
-                    onClick={() => handleSalvarAssist(gol.id)}
-                    disabled={carregando}
-                    className="p-1.5 rounded flex-shrink-0 transition-colors"
-                    style={{ background: 'rgba(74,222,128,0.1)', color: '#4ade80' }}
-                    title="Confirmar"
-                  >
-                    <Check size={13} />
-                  </button>
-                  <button
-                    onClick={() => setEditAssistGolId(null)}
-                    className="p-1.5 rounded flex-shrink-0 transition-colors"
-                    style={{ color: '#555' }}
-                    title="Cancelar"
-                  >
-                    <X size={13} />
-                  </button>
                 </div>
               )}
             </div>
@@ -305,7 +335,12 @@ export function PartidaAuditoria({ diaId, partida, times }: Props) {
               <p className="font-barlow-condensed text-[10px] tracking-widest uppercase text-muted-foreground mb-1">Time</p>
               <Select value={novoTimeId} onValueChange={(v) => { setNovoTimeId(v ?? ''); setNovoJogadorId('') }}>
                 <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder="Selecione..." />
+                  <SelectValue placeholder="Selecione...">
+                    {(value) => {
+                      const t = timesPartida.find((t) => String(t.id) === String(value))
+                      return t ? <span style={{ color: t.cor }}>{t.nome}</span> : 'Selecione...'
+                    }}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {timesPartida.map((t) => (
@@ -320,7 +355,9 @@ export function PartidaAuditoria({ diaId, partida, times }: Props) {
               <p className="font-barlow-condensed text-[10px] tracking-widest uppercase text-muted-foreground mb-1">Jogador</p>
               <Select value={novoJogadorId} onValueChange={(v) => setNovoJogadorId(v ?? '')} disabled={!novoTimeId}>
                 <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder="Selecione..." />
+                  <SelectValue placeholder="Selecione...">
+                    {(value) => jogadoresNovoTime.find((j) => String(j.id) === String(value))?.nome ?? 'Selecione...'}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {jogadoresNovoTime.map((j) => (
@@ -334,7 +371,13 @@ export function PartidaAuditoria({ diaId, partida, times }: Props) {
             <p className="font-barlow-condensed text-[10px] tracking-widest uppercase text-muted-foreground mb-1">Assistência (opcional)</p>
             <Select value={novoAssistId} onValueChange={(v) => setNovoAssistId(v ?? '')}>
               <SelectTrigger className="h-8 text-xs">
-                <SelectValue placeholder="Sem assistência" />
+                <SelectValue placeholder="Sem assistência">
+                  {(value) =>
+                    value && value !== 'none'
+                      ? jogadoresSemNovoGolador.find((j) => String(j.id) === String(value))?.nome ?? 'Sem assistência'
+                      : 'Sem assistência'
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">— Sem assistência</SelectItem>

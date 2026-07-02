@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { calcularPeriodoCiclo } from '@/lib/utils'
-import { CicloUpdateSchema, nomeDoCiclo } from '@/lib/validations/ciclo'
 
 export type StatJogador = {
   posicao: number
@@ -76,14 +74,31 @@ export async function GET(
       LIMIT 10
     `
 
+    // Fotos = dias de jogo em que o jogador esteve no time campeao do dia
+    // (time com mais partidas vencidas naquele dia; empate = todos os times
+    // empatados contam como campeoes do dia).
     const rawFotos = await prisma.$queryRaw<RawGolStat[]>`
-      SELECT j.id, j.nome, COUNT(DISTINCT p.id) AS valor
-      FROM jogador_time jt
-      JOIN times t       ON jt.time_id          = t.id
-      JOIN partidas p    ON p.vencedor_id        = t.id
-      JOIN dias_de_jogo d ON p.dia_de_jogo_id   = d.id
-      JOIN jogadores j   ON jt.jogador_id        = j.id
-      WHERE d.ciclo_id = ${cicloId}
+      WITH vitorias_por_time_dia AS (
+        SELECT p.dia_de_jogo_id AS dia_id, t.id AS time_id, COUNT(*) AS vitorias
+        FROM partidas p
+        JOIN times t        ON t.id = p.vencedor_id
+        JOIN dias_de_jogo d ON d.id = p.dia_de_jogo_id
+        WHERE d.ciclo_id = ${cicloId}
+        GROUP BY p.dia_de_jogo_id, t.id
+      ),
+      campeao_do_dia AS (
+        SELECT dia_id, time_id
+        FROM (
+          SELECT dia_id, time_id,
+                 RANK() OVER (PARTITION BY dia_id ORDER BY vitorias DESC) AS posicao
+          FROM vitorias_por_time_dia
+        ) ranked
+        WHERE posicao = 1
+      )
+      SELECT j.id, j.nome, COUNT(DISTINCT cd.dia_id) AS valor
+      FROM campeao_do_dia cd
+      JOIN jogador_time jt ON jt.time_id = cd.time_id
+      JOIN jogadores j     ON j.id = jt.jogador_id
       GROUP BY j.id, j.nome
       ORDER BY valor DESC
       LIMIT 10
@@ -95,11 +110,6 @@ export async function GET(
         return { posicao: i + 1, nome: r.nome, valor: Number(r.valor), vitorias: v, pontos: v * 3 }
       })
 
-    const fotos: StatJogador[] = rawFotos.map((r, i) => {
-      const v = Number(r.valor)
-      return { posicao: i + 1, nome: r.nome, valor: v, vitorias: v, pontos: v * 3 }
-    })
-
     const data: CicloStats = {
       ciclo: {
         id: ciclo.id,
@@ -109,63 +119,12 @@ export async function GET(
       },
       artilharia: withVitorias(rawArtilharia),
       passes: withVitorias(rawPasses),
-      fotos,
+      fotos: withVitorias(rawFotos),
     }
 
     return NextResponse.json(data)
   } catch (error) {
     console.error('[GET /api/ciclos/:id]', error)
-    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
-  }
-}
-
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params
-    const cicloId = parseInt(id, 10)
-    const body = await request.json()
-    const result = CicloUpdateSchema.safeParse(body)
-    if (!result.success) {
-      return NextResponse.json({ error: 'Dados invalidos', details: result.error.flatten() }, { status: 422 })
-    }
-
-    const ciclo = await prisma.ciclo.findUnique({ where: { id: cicloId } })
-    if (!ciclo) return NextResponse.json({ error: 'Ciclo nao encontrado' }, { status: 404 })
-
-    const { diaDeCorte, mesReferencia } = result.data
-
-    let updateData: {
-      nome?: string
-      diaDeCorte?: number
-      inicioEm?: Date
-      fimEm?: Date
-    } = {}
-
-    if (diaDeCorte !== undefined && mesReferencia !== undefined) {
-      const [ano, mes] = mesReferencia.split('-').map(Number)
-      const { inicioEm, fimEm } = calcularPeriodoCiclo(diaDeCorte, mes, ano)
-      updateData = { nome: nomeDoCiclo(inicioEm), diaDeCorte, inicioEm, fimEm }
-    } else if (diaDeCorte !== undefined) {
-      updateData = { diaDeCorte }
-    }
-
-    const atualizado = await prisma.ciclo.update({
-      where: { id: cicloId },
-      data: updateData,
-    })
-
-    return NextResponse.json({
-      id: atualizado.id,
-      nome: atualizado.nome,
-      diaDeCorte: atualizado.diaDeCorte,
-      inicioEm: atualizado.inicioEm.toISOString().split('T')[0],
-      fimEm: atualizado.fimEm ? atualizado.fimEm.toISOString().split('T')[0] : null,
-    })
-  } catch (error) {
-    console.error('[PATCH /api/ciclos/:id]', error)
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }

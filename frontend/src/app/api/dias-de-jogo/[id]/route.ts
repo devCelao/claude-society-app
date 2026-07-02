@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { MontarTimesSchema } from '@/lib/validations/dia-de-jogo'
 
 export type JogadorLista = { id: number; nome: string; apelido: string | null; convidado: boolean }
 export type CorTime = 'vermelho' | 'azul' | 'verde' | 'laranja'
@@ -95,21 +94,31 @@ export async function PATCH(
     const dia = await prisma.diaDeJogo.findUnique({ where: { id: diaId } })
     if (!dia) return NextResponse.json({ error: 'Nao encontrado' }, { status: 404 })
 
-    // Transição lista → times: persiste passo + jogadores selecionados
+    // Transição lista → times: persiste passo + jogadores selecionados.
+    // Jogadores que saíram da lista sao removidos dos times ja montados (autosave incremental).
     if (body.passo === 'times') {
       const updateData: Record<string, unknown> = { passo: 'times' }
       if (Array.isArray(body.jogadorIds)) updateData.listaJogadorIds = body.jogadorIds
       await prisma.diaDeJogo.update({ where: { id: diaId }, data: updateData })
+
+      if (Array.isArray(body.jogadorIds)) {
+        const timesExistentes = await prisma.time.findMany({ where: { diaDeJogoId: diaId }, select: { id: true } })
+        if (timesExistentes.length > 0) {
+          await prisma.jogadorTime.deleteMany({
+            where: {
+              timeId: { in: timesExistentes.map((t) => t.id) },
+              jogadorId: { notIn: body.jogadorIds },
+            },
+          })
+        }
+      }
+
       return NextResponse.json({ id: diaId, passo: 'times' })
     }
 
-    // Transição times → lista (voltar): remove times e volta passo
+    // Transição times → lista (voltar): apenas troca o passo.
+    // Times/jogador_time ja montados sao preservados (autosave incremental cuida da persistencia).
     if (body.passo === 'lista') {
-      const existentes = await prisma.time.findMany({ where: { diaDeJogoId: diaId }, select: { id: true } })
-      if (existentes.length > 0) {
-        await prisma.jogadorTime.deleteMany({ where: { timeId: { in: existentes.map((t) => t.id) } } })
-        await prisma.time.deleteMany({ where: { diaDeJogoId: diaId } })
-      }
       await prisma.diaDeJogo.update({ where: { id: diaId }, data: { passo: 'lista' } })
       return NextResponse.json({ id: diaId, passo: 'lista' })
     }
@@ -139,27 +148,22 @@ export async function PATCH(
       return NextResponse.json({ id: diaId, passo: 'times', status: dia.status === 'EM_ANDAMENTO' ? 'PENDENTE' : dia.status })
     }
 
-    // Transição times → principal: cria times com jogadores
-    if (body.passo === 'principal' && body.times) {
-      const result = MontarTimesSchema.safeParse({ times: body.times })
-      if (!result.success) {
-        return NextResponse.json({ error: 'Dados invalidos', details: result.error.flatten() }, { status: 422 })
-      }
+    // Transição times → principal: times/jogador_time ja foram persistidos via autosave
+    // (PATCH /api/dias-de-jogo/:id/times); aqui so valida e troca o passo.
+    if (body.passo === 'principal') {
+      const times = await prisma.time.findMany({
+        where: { diaDeJogoId: diaId },
+        include: { jogadorTimes: true },
+      })
 
-      // Remove times existentes
-      const existentes = await prisma.time.findMany({ where: { diaDeJogoId: diaId }, select: { id: true } })
-      if (existentes.length > 0) {
-        await prisma.jogadorTime.deleteMany({ where: { timeId: { in: existentes.map((t) => t.id) } } })
-        await prisma.time.deleteMany({ where: { diaDeJogoId: diaId } })
-      }
+      const listaJogadorIds = (dia.listaJogadorIds as number[] | null) ?? []
+      const totalDistribuido = times.reduce((s, t) => s + t.jogadorTimes.length, 0)
 
-      for (const t of result.data.times) {
-        const time = await prisma.time.create({
-          data: { diaDeJogoId: diaId, nome: t.nome, cor: t.cor },
-        })
-        await prisma.jogadorTime.createMany({
-          data: t.jogadorIds.map((jogadorId) => ({ timeId: time.id, jogadorId })),
-        })
+      if (times.length !== 3 || listaJogadorIds.length === 0 || totalDistribuido !== listaJogadorIds.length) {
+        return NextResponse.json(
+          { error: 'Distribua todos os jogadores da lista entre os 3 times antes de fechar' },
+          { status: 400 }
+        )
       }
 
       await prisma.diaDeJogo.update({ where: { id: diaId }, data: { passo: 'principal' } })

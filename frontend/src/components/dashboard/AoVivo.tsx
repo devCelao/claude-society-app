@@ -1,11 +1,14 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Trophy, Play, Pause, RotateCcw, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react'
+import { Trophy, Play, Pause, RotateCcw, CheckCircle2, XCircle, AlertTriangle, ImageDown, Pencil, X, Check } from 'lucide-react'
+import { toBlob } from 'html-to-image'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { PartidaAuditoria } from '@/components/partidas/PartidaAuditoria'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -30,7 +33,7 @@ type GolData = {
 type PartidaData = {
   id: number; timeAId: number; timeBId: number
   timeANome: string; timeBNome: string; timeACor: string; timeBCor: string
-  status: string; inicioEm: string | null; timerAcumuladoMs: number; vencedorId: number | null
+  status: string; createdAt: string; inicioEm: string | null; timerAcumuladoMs: number; vencedorId: number | null
   gols: GolData[]
 }
 
@@ -186,6 +189,17 @@ function StatsDia({ partidas, times, victories, jogadores }: {
   victories: Record<number, number>; jogadores: { nome: string; gols: number; assists: number }[]
 }) {
   const finished = partidas.filter((p) => p.status === 'FINALIZADA')
+
+  const tempoEmCampoMs: Record<number, number> = {}
+  finished.forEach((p) => {
+    tempoEmCampoMs[p.timeAId] = (tempoEmCampoMs[p.timeAId] ?? 0) + p.timerAcumuladoMs
+    tempoEmCampoMs[p.timeBId] = (tempoEmCampoMs[p.timeBId] ?? 0) + p.timerAcumuladoMs
+  })
+  const formatTempoCampo = (ms: number) => {
+    const totalSeg = Math.floor(ms / 1000)
+    return `${String(Math.floor(totalSeg / 60)).padStart(2, '0')}:${String(totalSeg % 60).padStart(2, '0')}`
+  }
+
   return (
     <div className="space-y-4 pt-2">
       <p className="font-barlow-condensed text-xs tracking-widest uppercase text-muted-foreground">Placar do dia</p>
@@ -197,6 +211,9 @@ function StatsDia({ partidas, times, victories, jogadores }: {
               <div className="font-barlow-condensed text-xs text-muted-foreground capitalize truncate px-2">{t.nome}</div>
               <div className="font-bebas text-4xl" style={{ color: hex }}>{victories[t.id] ?? 0}</div>
               <div className="font-barlow-condensed text-[10px] text-muted-foreground">vitórias</div>
+              <div className="font-barlow-condensed text-[10px] tabular-nums mt-1" style={{ color: hex }}>
+                {formatTempoCampo(tempoEmCampoMs[t.id] ?? 0)} em campo
+              </div>
             </div>
           )
         })}
@@ -262,6 +279,79 @@ function StatsDia({ partidas, times, victories, jogadores }: {
 export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
   const router = useRouter()
 
+  const [gerandoImagem, setGerandoImagem] = useState(false)
+  const capturaRef = useRef<HTMLDivElement>(null)
+
+  async function esperarLayoutEstabilizar(node: HTMLElement): Promise<void> {
+    let alturaAnterior = -1
+    for (let tentativa = 0; tentativa < 20; tentativa++) {
+      await new Promise((resolve) => setTimeout(resolve, 40))
+      const altura = node.scrollHeight
+      if (altura > 0 && altura === alturaAnterior) return
+      alturaAnterior = altura
+    }
+  }
+
+  async function capturarImagem(): Promise<Blob> {
+    const node = capturaRef.current
+    if (!node) throw new Error('Nada para capturar')
+    await esperarLayoutEstabilizar(node)
+    const blob = await toBlob(node, {
+      pixelRatio: 2,
+      backgroundColor: '#ffffff',
+      width: node.scrollWidth,
+      height: node.scrollHeight,
+    })
+    if (!blob) throw new Error('Falha ao gerar imagem')
+    return blob
+  }
+
+  async function handleCopiarImagem() {
+    setGerandoImagem(true)
+    const blobPromise = capturarImagem()
+
+    try {
+      const temClipboardImagem =
+        typeof navigator !== 'undefined' && 'clipboard' in navigator && typeof window.ClipboardItem !== 'undefined'
+
+      if (temClipboardImagem) {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })])
+          toast.success('Imagem copiada! Cole (Ctrl+V) onde quiser compartilhar.')
+          return
+        } catch {
+          // navegador tem a API mas recusou (ex.: sem permissão) — cai nos fallbacks abaixo
+        }
+      }
+
+      const blob = await blobPromise
+      const nomeArquivo = `times-${data}.png`
+      const file = new File([blob], nomeArquivo, { type: 'image/png' })
+
+      if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: 'Times do dia' })
+          return
+        } catch (err) {
+          if (err instanceof Error && err.name === 'AbortError') return
+          // segue para o download
+        }
+      }
+
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = nomeArquivo
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success('Imagem baixada')
+    } catch {
+      toast.error('Não foi possível gerar a imagem')
+    } finally {
+      setGerandoImagem(false)
+    }
+  }
+
   const [phase, setPhase] = useState<GamePhase>(() => derivePhase(partidas, times))
   const [localGols, setLocalGols] = useState<GolData[]>(() => {
     const last = partidas[partidas.length - 1]
@@ -271,6 +361,10 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
   const [savingGol, setSavingGol] = useState(false)
   const [busy, setBusy] = useState(false)
   const [confirmAnular, setConfirmAnular] = useState(false)
+  const [mostrarEdicaoUltimaPartida, setMostrarEdicaoUltimaPartida] = useState(false)
+  const [editAssistGolId, setEditAssistGolId] = useState<number | null>(null)
+  const [assistValue, setAssistValue] = useState('')
+  const [golBusy, setGolBusy] = useState(false)
 
   // ── Timer (client-side, nunca auto-start) ──
   type TimerState = 'parado' | 'rodando' | 'pausado'
@@ -294,6 +388,14 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
   const timerSeg = Math.floor((restanteMs % 60000) / 1000)
   const timerDisplay = `${String(timerMin).padStart(2, '0')}:${String(timerSeg).padStart(2, '0')}`
   const timerEsgotado = restanteMs === 0
+
+  // ── Relógio de parede (não pausa nunca) — usado no "tempo desde o início" ──
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    if (partidas.length === 0) return
+    const id = setInterval(() => setNowMs(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [partidas.length])
 
   function patchTimer(inicioEm: string | null, timerAcumuladoMs: number) {
     if (phase.type !== 'jogando') return
@@ -325,6 +427,8 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
   // ── Re-sincroniza fase quando dados do servidor mudam ──
   const lastId = partidas[partidas.length - 1]?.id ?? 0
   const lastStatus = partidas[partidas.length - 1]?.status ?? ''
+  const lastVencedorId = partidas[partidas.length - 1]?.vencedorId ?? null
+  const lastGolsCount = partidas[partidas.length - 1]?.gols.length ?? 0
   useEffect(() => {
     const newPhase = derivePhase(partidas, times)
     setPhase(newPhase)
@@ -351,7 +455,7 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
       setLocalGols([])
       setInicioRodadaEm(null); setAcumuladoMs(0); setRestanteMs(DURACAO_MS); setTimerState('parado')
     }
-  }, [lastId, lastStatus, partidas.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lastId, lastStatus, partidas.length, lastVencedorId, lastGolsCount]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const stats = computeStats(partidas, times, phase.type === 'jogando' ? localGols : [])
 
@@ -394,6 +498,37 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
       setGolDialog(null)
       toast.success(`Gol de ${body.jogadorNome}!${body.assistenciaNome ? ` Assist.: ${body.assistenciaNome}` : ''}`)
     } finally { setSavingGol(false) }
+  }
+
+  async function handleDeleteGolLive(golId: number) {
+    if (phase.type !== 'jogando') return
+    setGolBusy(true)
+    try {
+      const res = await fetch(`/api/dias-de-jogo/${diaId}/partidas/${phase.partidaId}/gols/${golId}`, { method: 'DELETE' })
+      if (!res.ok) { toast.error((await res.json()).error ?? 'Erro ao remover gol'); return }
+      setLocalGols((prev) => prev.filter((g) => g.id !== golId))
+      toast.success('Gol removido')
+    } finally { setGolBusy(false) }
+  }
+
+  async function handleSalvarAssistLive(golId: number) {
+    if (phase.type !== 'jogando') return
+    setGolBusy(true)
+    try {
+      const assistId = assistValue === '' || assistValue === 'none' ? null : parseInt(assistValue, 10)
+      const res = await fetch(`/api/dias-de-jogo/${diaId}/partidas/${phase.partidaId}/gols/${golId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assistenciaJogadorId: assistId }),
+      })
+      if (!res.ok) { toast.error((await res.json()).error ?? 'Erro ao salvar assistencia'); return }
+      const body = await res.json()
+      setLocalGols((prev) => prev.map((g) =>
+        g.id === golId ? { ...g, assistenciaJogadorId: body.assistenciaJogadorId, assistenciaJogadorNome: body.assistenciaNome } : g
+      ))
+      setEditAssistGolId(null)
+      toast.success('Assistencia atualizada')
+    } finally { setGolBusy(false) }
   }
 
   async function handleEncerrarPartida() {
@@ -439,10 +574,61 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
 
   const getTime = (id: number) => times.find((t) => t.id === id)!
 
+  // ── Tempo em campo (soma do tempo de cronômetro de todas as partidas do dia) ──
+  const tempoEmCampoTotalMs = partidas.reduce((acc, p) => {
+    if (phase.type === 'jogando' && p.id === phase.partidaId) {
+      const emAndamento = timerState === 'rodando' && inicioRodadaEm ? Date.now() - inicioRodadaEm.getTime() : 0
+      return acc + acumuladoMs + emAndamento
+    }
+    return acc + (p.timerAcumuladoMs ?? 0)
+  }, 0)
+
+  // ── Tempo desde o início do primeiro jogo (relógio de parede, não pausa) ──
+  const tempoDesdeInicioMs = partidas.length > 0
+    ? Math.max(0, nowMs - new Date(partidas[0].createdAt).getTime())
+    : 0
+
+  function formatTempo(ms: number): string {
+    const totalSeg = Math.floor(ms / 1000)
+    const h = Math.floor(totalSeg / 3600)
+    const m = Math.floor((totalSeg % 3600) / 60)
+    const s = totalSeg % 60
+    return h > 0
+      ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+      : `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
+
   // ── Render ──
 
   return (
     <div className="space-y-5">
+
+      {/* ── Tempo em campo / Tempo desde o início ── */}
+      {partidas.length > 0 && (
+        <div className="grid grid-cols-2 gap-2">
+          <div className="flex flex-col gap-0.5 px-4 py-2.5 rounded-xl"
+            style={{ background: '#111', border: '1px solid #242424' }}>
+            <span className="font-barlow-condensed text-[10px] tracking-widest uppercase text-muted-foreground">
+              Tempo em campo
+            </span>
+            <span className="font-bebas text-xl tabular-nums tracking-widest" style={{ color: '#f5c400' }}>
+              {formatTempo(tempoEmCampoTotalMs)}
+            </span>
+          </div>
+          <div className="flex flex-col gap-0.5 px-4 py-2.5 rounded-xl"
+            style={{ background: '#111', border: '1px solid #242424' }}>
+            <span className="font-barlow-condensed text-[10px] tracking-widest uppercase text-muted-foreground">
+              Desde o início
+            </span>
+            <span className="font-bebas text-xl tabular-nums tracking-widest" style={{ color: '#f5c400' }}>
+              {formatTempo(tempoDesdeInicioMs)}
+            </span>
+            <span className="font-barlow-condensed text-[10px] tabular-nums text-muted-foreground">
+              começou às {new Date(partidas[0].createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* ── PRONTO ── */}
       {phase.type === 'pronto' && (
@@ -459,6 +645,45 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
             {times.map((t) => <TimeCard key={t.id} time={t} />)}
           </div>
 
+          {/* Captura de imagem dos times (nó fora de tela; ver DiaDeJogoMain
+              e CicloRanking para o motivo do wrapper carregar o posicionamento
+              em vez do próprio nó capturado) */}
+          <div
+            className={gerandoImagem ? 'block' : 'hidden'}
+            style={gerandoImagem ? { position: 'fixed', top: 0, left: -9999 } : undefined}
+          >
+            <div ref={capturaRef} style={{ fontFamily: 'sans-serif', color: '#000', background: '#fff', padding: 16, width: 720 }}>
+              <div style={{ marginBottom: 20, borderBottom: '3px solid #f5c400', paddingBottom: 10 }}>
+                <h1 style={{ fontSize: 24, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 2, margin: 0 }}>
+                  Times do dia
+                </h1>
+                <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+                  {cicloNome && <span>{cicloNome} · </span>}
+                  Gerado em {new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                  {' às '}
+                  {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </div>
+              <div style={{ display: 'flex' }}>
+                {times.map((t) => {
+                  const hex = COR_HEX[t.cor as CorTime] ?? '#888'
+                  return (
+                    <div key={t.id} style={{ width: 213, marginRight: 16, borderLeft: `3px solid ${hex}`, paddingLeft: 10 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', color: hex, marginBottom: 6, letterSpacing: 1 }}>
+                        {t.nome}
+                      </div>
+                      {t.jogadores.map((j) => (
+                        <div key={j.id} style={{ fontSize: 12, paddingBottom: 3 }}>
+                          {j.nome}{j.convidado ? ' (G)' : ''}
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+
           <div className="space-y-3">
             <button onClick={() => setPhase({ type: 'configurando' })} disabled={busy}
               className="w-full py-4 rounded-xl font-bebas text-2xl tracking-widest disabled:opacity-40"
@@ -466,6 +691,12 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
               INICIAR JOGO
             </button>
             <div className="flex gap-2">
+              <button onClick={handleCopiarImagem} disabled={gerandoImagem}
+                className="flex-1 py-2.5 rounded-xl font-barlow-condensed text-sm tracking-wide disabled:opacity-40"
+                style={{ background: 'rgba(245,196,0,0.1)', color: '#f5c400', border: '1px solid rgba(245,196,0,0.25)' }}>
+                <ImageDown size={14} className={`inline mr-1.5 ${gerandoImagem ? 'animate-pulse' : ''}`} />
+                {gerandoImagem ? 'Gerando...' : 'Copiar imagem'}
+              </button>
               <button onClick={handleEncerrarDia} disabled={busy}
                 className="flex-1 py-2.5 rounded-xl font-barlow-condensed text-sm tracking-wide"
                 style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>
@@ -598,18 +829,83 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
               </button>
             </div>
 
-            {/* Gols recentes */}
+            {/* Gols recentes — editar assistência / remover gol */}
             {localGols.length > 0 && (
               <div className="px-4 pb-3">
-                <div className="rounded-xl px-3 py-2.5 space-y-1.5" style={{ background: '#0a0a0a' }}>
+                <div className="rounded-xl px-3 py-2.5 space-y-2" style={{ background: '#0a0a0a' }}>
                   <div className="font-barlow-condensed text-[10px] tracking-widest uppercase text-muted-foreground">Gols</div>
-                  {[...localGols].reverse().map((g, i) => {
+                  {[...localGols].reverse().map((g) => {
                     const hex = g.timeId === phase.timeAId ? hexA : hexB
+                    const isEditando = editAssistGolId === g.id
+                    const jogadoresDoTime = getTime(g.timeId).jogadores.filter((j) => j.id !== g.jogadorId)
                     return (
-                      <div key={i} className="flex items-center gap-2 font-barlow-condensed text-xs">
-                        <div className="w-1.5 h-1.5 rounded-full" style={{ background: hex }} />
-                        <span style={{ color: hex }}>{g.jogadorNome}</span>
-                        {g.assistenciaJogadorNome && <span className="text-muted-foreground">→ {g.assistenciaJogadorNome}</span>}
+                      <div key={g.id} className="space-y-1">
+                        <div className="flex items-center gap-2 font-barlow-condensed text-xs">
+                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: hex }} />
+                          <span className="flex-1" style={{ color: hex }}>{g.jogadorNome}</span>
+                          {g.assistenciaJogadorNome && !isEditando && (
+                            <span className="text-muted-foreground">→ {g.assistenciaJogadorNome}</span>
+                          )}
+                          <button
+                            onClick={() => {
+                              setEditAssistGolId(isEditando ? null : g.id)
+                              setAssistValue(g.assistenciaJogadorId ? String(g.assistenciaJogadorId) : '')
+                            }}
+                            disabled={golBusy}
+                            title="Editar assistência"
+                            className="p-1 rounded flex-shrink-0"
+                            style={{ color: g.assistenciaJogadorNome ? '#3b82f6' : '#444' }}
+                          >
+                            <Pencil size={11} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteGolLive(g.id)}
+                            disabled={golBusy}
+                            title="Remover gol"
+                            className="p-1 rounded flex-shrink-0"
+                            style={{ color: '#444' }}
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                        {isEditando && (
+                          <div className="pl-[14px] flex items-center gap-2">
+                            <Select value={assistValue} onValueChange={(v) => setAssistValue(v ?? '')}>
+                              <SelectTrigger className="h-7 text-xs flex-1 min-w-0" style={{ fontSize: '12px' }}>
+                                <SelectValue placeholder="Sem assistência">
+                                  {(value) =>
+                                    value && value !== 'none'
+                                      ? jogadoresDoTime.find((j) => String(j.id) === String(value))?.nome ?? 'Sem assistência'
+                                      : 'Sem assistência'
+                                  }
+                                </SelectValue>
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">— Sem assistência</SelectItem>
+                                {jogadoresDoTime.map((j) => (
+                                  <SelectItem key={j.id} value={String(j.id)}>{j.nome}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <button
+                              onClick={() => handleSalvarAssistLive(g.id)}
+                              disabled={golBusy}
+                              className="p-1.5 rounded flex-shrink-0"
+                              style={{ background: 'rgba(74,222,128,0.1)', color: '#4ade80' }}
+                              title="Confirmar"
+                            >
+                              <Check size={13} />
+                            </button>
+                            <button
+                              onClick={() => setEditAssistGolId(null)}
+                              className="p-1.5 rounded flex-shrink-0"
+                              style={{ color: '#555' }}
+                              title="Cancelar"
+                            >
+                              <X size={13} />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )
                   })}
@@ -710,6 +1006,26 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
           </div>
         )
       })()}
+
+      {/* ── Editar gols da última partida (disponível assim que ela finaliza) ── */}
+      {lastStatus === 'FINALIZADA' && (
+        <div className="space-y-2">
+          <button
+            onClick={() => {
+              if (mostrarEdicaoUltimaPartida) router.refresh()
+              setMostrarEdicaoUltimaPartida((v) => !v)
+            }}
+            className="flex items-center gap-1.5 font-barlow-condensed text-xs tracking-wide transition-colors"
+            style={{ color: mostrarEdicaoUltimaPartida ? '#f5c400' : '#666' }}
+          >
+            <Pencil size={12} />
+            {mostrarEdicaoUltimaPartida ? 'Fechar edição' : 'Editar gols da última partida'}
+          </button>
+          {mostrarEdicaoUltimaPartida && (
+            <PartidaAuditoria diaId={diaId} partida={{ id: lastId }} times={times} />
+          )}
+        </div>
+      )}
 
       {/* ── Stats ── */}
       {partidas.length > 0 && (
