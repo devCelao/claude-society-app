@@ -51,7 +51,7 @@ export async function POST(
     })
     if (!partida) return NextResponse.json({ error: 'Partida nao encontrada' }, { status: 404 })
 
-    const isAudit = partida.diaDeJogo.status === 'FINALIZADO'
+    const isAudit = partida.diaDeJogo.status === 'FINALIZADO' || partida.status === 'FINALIZADA'
 
     if (!isAudit && partida.status !== 'EM_ANDAMENTO') {
       return NextResponse.json({ error: 'Partida nao esta em andamento' }, { status: 400 })

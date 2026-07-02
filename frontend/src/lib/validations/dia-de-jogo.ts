@@ -11,7 +11,7 @@ export const FecharListaSchema = z.object({
     .max(18, 'Maximo de 18 jogadores'),
 })
 
-export const MontarTimesSchema = z.object({
+export const SincronizarTimesSchema = z.object({
   times: z
     .array(
       z.object({
@@ -25,4 +25,4 @@ export const MontarTimesSchema = z.object({
 
 export type DiaDeJogoInput = z.infer<typeof DiaDeJogoSchema>
 export type FecharListaInput = z.infer<typeof FecharListaSchema>
-export type MontarTimesInput = z.infer<typeof MontarTimesSchema>
+export type SincronizarTimesInput = z.infer<typeof SincronizarTimesSchema>

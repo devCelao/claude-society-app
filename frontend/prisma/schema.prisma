@@ -63,18 +63,9 @@ model Jogador {
   @@map("jogadores")
 }
 
-model ConfiguracaoJogos {
-  id         Int      @id @default(1)
-  diaDeCorte Int?     @map("dia_de_corte")
-  updatedAt  DateTime @updatedAt @map("updated_at")
-
-  @@map("configuracao_jogos")
-}
-
 model Ciclo {
   id         Int       @id @default(autoincrement())
   nome       String    @db.VarChar(100)
-  diaDeCorte Int?      @map("dia_de_corte")
   inicioEm   DateTime  @map("inicio_em")
   fimEm      DateTime? @map("fim_em")
   createdAt  DateTime  @default(now()) @map("created_at")

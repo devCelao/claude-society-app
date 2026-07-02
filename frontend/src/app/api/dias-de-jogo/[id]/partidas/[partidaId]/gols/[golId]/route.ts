@@ -3,8 +3,9 @@ import { prisma } from '@/lib/db'
 import { z } from 'zod'
 import type { Prisma } from '@/generated/prisma/client'
 
-const AssistenciaSchema = z.object({
-  assistenciaJogadorId: z.number().int().positive().nullable(),
+const GolEditSchema = z.object({
+  jogadorId: z.number().int().positive().optional(),
+  assistenciaJogadorId: z.number().int().positive().nullable().optional(),
 })
 
 async function recalcularVencedor(
@@ -50,7 +51,7 @@ export async function PATCH(
     const gId = parseInt(golId, 10)
 
     const body = await request.json()
-    const result = AssistenciaSchema.safeParse(body)
+    const result = GolEditSchema.safeParse(body)
     if (!result.success) {
       return NextResponse.json({ error: 'Dados invalidos', details: result.error.flatten() }, { status: 422 })
     }
@@ -58,38 +59,57 @@ export async function PATCH(
     const gol = await buscarGol(gId, pId, diaId)
     if (!gol) return NextResponse.json({ error: 'Gol nao encontrado' }, { status: 404 })
 
-    const isAudit = gol.partida.diaDeJogo.status === 'FINALIZADO'
-    if (!isAudit && gol.partida.status === 'FINALIZADA') {
-      return NextResponse.json({ error: 'Partida ja finalizada' }, { status: 400 })
-    }
+    const { jogadorId, assistenciaJogadorId } = result.data
 
-    const { assistenciaJogadorId } = result.data
-
-    if (!assistenciaJogadorId || assistenciaJogadorId === gol.jogadorId) {
-      if (gol.assistencia) {
-        await prisma.assistencia.delete({ where: { golId: gId } })
+    let novoJogadorId = gol.jogadorId
+    if (jogadorId !== undefined && jogadorId !== gol.jogadorId) {
+      const pertence = await prisma.jogadorTime.findFirst({
+        where: { timeId: gol.timeId, jogadorId },
+      })
+      if (!pertence) {
+        return NextResponse.json({ error: 'Jogador nao pertence a este time' }, { status: 400 })
       }
-      return NextResponse.json({ id: gId, assistenciaJogadorId: null, assistenciaNome: null })
+      novoJogadorId = jogadorId
     }
 
-    const jogadorAssist = await prisma.jogador.findUnique({
-      where: { id: assistenciaJogadorId },
-      select: { nome: true },
-    })
-    if (!jogadorAssist) {
-      return NextResponse.json({ error: 'Jogador de assistencia nao encontrado' }, { status: 404 })
+    let novoAssistId =
+      assistenciaJogadorId === undefined ? (gol.assistencia?.jogadorId ?? null) : assistenciaJogadorId
+    if (novoAssistId === novoJogadorId) {
+      novoAssistId = null
     }
 
-    await prisma.assistencia.upsert({
-      where: { golId: gId },
-      create: { golId: gId, jogadorId: assistenciaJogadorId },
-      update: { jogadorId: assistenciaJogadorId },
+    let assistenciaNome: string | null = null
+    if (novoAssistId) {
+      const jogadorAssist = await prisma.jogador.findUnique({
+        where: { id: novoAssistId },
+        select: { nome: true },
+      })
+      if (!jogadorAssist) {
+        return NextResponse.json({ error: 'Jogador de assistencia nao encontrado' }, { status: 404 })
+      }
+      assistenciaNome = jogadorAssist.nome
+    }
+
+    await prisma.$transaction(async (tx) => {
+      if (novoJogadorId !== gol.jogadorId) {
+        await tx.gol.update({ where: { id: gId }, data: { jogadorId: novoJogadorId } })
+      }
+      if (novoAssistId) {
+        await tx.assistencia.upsert({
+          where: { golId: gId },
+          create: { golId: gId, jogadorId: novoAssistId },
+          update: { jogadorId: novoAssistId },
+        })
+      } else if (gol.assistencia) {
+        await tx.assistencia.delete({ where: { golId: gId } })
+      }
     })
 
     return NextResponse.json({
       id: gId,
-      assistenciaJogadorId,
-      assistenciaNome: jogadorAssist.nome,
+      jogadorId: novoJogadorId,
+      assistenciaJogadorId: novoAssistId,
+      assistenciaNome,
     })
   } catch (error) {
     console.error('[PATCH /api/.../gols/:golId]', error)
@@ -110,10 +130,7 @@ export async function DELETE(
     const gol = await buscarGol(gId, pId, diaId)
     if (!gol) return NextResponse.json({ error: 'Gol nao encontrado' }, { status: 404 })
 
-    const isAudit = gol.partida.diaDeJogo.status === 'FINALIZADO'
-    if (!isAudit && gol.partida.status === 'FINALIZADA') {
-      return NextResponse.json({ error: 'Partida ja finalizada' }, { status: 400 })
-    }
+    const isAudit = gol.partida.diaDeJogo.status === 'FINALIZADO' || gol.partida.status === 'FINALIZADA'
 
     const resultado = await prisma.$transaction(async (tx) => {
       await tx.gol.delete({ where: { id: gId } })

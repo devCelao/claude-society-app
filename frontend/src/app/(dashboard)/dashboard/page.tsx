@@ -73,6 +73,7 @@ export default async function DashboardPage() {
             timeACor: p.timeA.cor,
             timeBCor: p.timeB.cor,
             status: p.status,
+            createdAt: p.createdAt.toISOString(),
             inicioEm: p.inicioEm?.toISOString() ?? null,
             timerAcumuladoMs: p.timerAcumuladoMs,
             vencedorId: p.vencedorId,

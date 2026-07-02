@@ -3,7 +3,7 @@
 import { useRef, useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Users, CalendarDays, Trophy, CalendarRange, LogOut, UserCog, MapPin } from 'lucide-react'
+import { LayoutDashboard, Users, CalendarDays, Trophy, LogOut, UserCog, MapPin } from 'lucide-react'
 import { useSession, signOut } from 'next-auth/react'
 
 const navItems = [
@@ -19,12 +19,6 @@ const configItems = [
     label: 'Meu Perfil',
     icon: UserCog,
     description: 'Alterar nome e senha',
-  },
-  {
-    href: '/configuracao',
-    label: 'Data de Corte',
-    icon: CalendarRange,
-    description: 'Configurar periodo do ciclo ativo',
   },
   {
     href: '/configuracao/posicoes',
