@@ -40,7 +40,7 @@ function TabelaRanking({
             <th className="text-left py-1.5">Nome</th>
             <th className="text-center py-1.5 w-10">{colunaValor}</th>
             <th className="text-center py-1.5 w-8">V</th>
-            <th className="text-center py-1.5 w-10">Pts</th>
+            <th className="text-center py-1.5 w-8">E</th>
           </tr>
         </thead>
         <tbody>
@@ -68,13 +68,20 @@ function TabelaRanking({
                 {item.valor}
               </td>
               <td className="py-2 text-center text-muted-foreground">{item.vitorias}</td>
-              <td className="py-2 text-center text-muted-foreground">{item.pontos}</td>
+              <td className="py-2 text-center text-muted-foreground">{item.empates}</td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
   )
+}
+
+function formatMesAno(ciclo: CicloResumo): string {
+  const inicio = new Date(ciclo.inicioEm)
+  const mes = String(inicio.getMonth() + 1).padStart(2, '0')
+  const ano = inicio.getFullYear()
+  return `${mes}/${ano}`
 }
 
 function formatPeriodo(ciclo: CicloResumo): string {
@@ -98,7 +105,7 @@ function PrintTabela({ titulo, colunaValor, dados }: { titulo: string; colunaVal
             <th style={{ textAlign: 'left', paddingBottom: 4 }}>Nome</th>
             <th style={{ textAlign: 'center', paddingBottom: 4, width: 32 }}>{colunaValor}</th>
             <th style={{ textAlign: 'center', paddingBottom: 4, width: 28 }}>V</th>
-            <th style={{ textAlign: 'center', paddingBottom: 4, width: 32 }}>Pts</th>
+            <th style={{ textAlign: 'center', paddingBottom: 4, width: 28 }}>E</th>
           </tr>
         </thead>
         <tbody>
@@ -111,7 +118,7 @@ function PrintTabela({ titulo, colunaValor, dados }: { titulo: string; colunaVal
               <td style={{ padding: '4px 0', fontWeight: idx === 0 ? 700 : 400 }}>{item.nome}</td>
               <td style={{ padding: '4px 0', textAlign: 'center', fontWeight: 700, color: idx === 0 ? '#b08a00' : '#333' }}>{item.valor}</td>
               <td style={{ padding: '4px 0', textAlign: 'center', color: '#666' }}>{item.vitorias}</td>
-              <td style={{ padding: '4px 0', textAlign: 'center', color: '#666' }}>{item.pontos}</td>
+              <td style={{ padding: '4px 0', textAlign: 'center', color: '#666' }}>{item.empates}</td>
             </tr>
           ))}
         </tbody>
@@ -274,7 +281,7 @@ export function CicloRanking({ ciclos, cicloIdInicial }: Props) {
           >
             {ciclos.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.nome} {c.fimEm === null ? '(ativo)' : ''}
+                {formatMesAno(c)} {c.fimEm === null ? '- [ATIVO]' : ''}
               </option>
             ))}
           </select>
@@ -366,7 +373,7 @@ export function CicloRanking({ ciclos, cicloIdInicial }: Props) {
               <PrintTabela titulo="Lider em Passes" colunaValor="Ass" dados={stats.passes} />
             </div>
             <div style={{ width: 213 }}>
-              <PrintTabela titulo="Maior Vencedor" colunaValor="V" dados={stats.fotos} />
+              <PrintTabela titulo="Fotos" colunaValor="FOTO" dados={stats.fotos} />
             </div>
           </div>
           </div>
