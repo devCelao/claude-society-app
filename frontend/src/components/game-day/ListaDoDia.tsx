@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Check, Users } from 'lucide-react'
+import { Check, Search, Users, X } from 'lucide-react'
 import type { Jogador } from './DiaDeJogoFlow'
 
 interface Props {
@@ -18,11 +18,45 @@ function formatData(iso: string) {
   return d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
-export function ListaDoDia({ todosJogadores, jogadoresSelecionados, data, onFechar }: Props) {
+function normalizar(texto: string): string {
+  return texto
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+}
+
+export function ListaDoDia({ diaId, todosJogadores, jogadoresSelecionados, data, onFechar }: Props) {
   const [selecionados, setSelecionados] = useState<Set<number>>(
     new Set(jogadoresSelecionados.map((j) => j.id))
   )
+  const [busca, setBusca] = useState('')
   const [salvando, setSalvando] = useState(false)
+  const autosaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const montado = useRef(false)
+
+  // Autosave: persiste a lista marcada ~400ms apos a ultima mudanca,
+  // sem avancar o passo do fluxo (dia.passo continua 'lista' no banco).
+  useEffect(() => {
+    if (!montado.current) {
+      montado.current = true
+      return
+    }
+    if (autosaveTimeout.current) clearTimeout(autosaveTimeout.current)
+    autosaveTimeout.current = setTimeout(async () => {
+      try {
+        await fetch(`/api/dias-de-jogo/${diaId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jogadorIds: Array.from(selecionados) }),
+        })
+      } catch {
+        toast.error('Falha ao salvar automaticamente a lista')
+      }
+    }, 400)
+    return () => {
+      if (autosaveTimeout.current) clearTimeout(autosaveTimeout.current)
+    }
+  }, [selecionados, diaId])
 
   function toggle(id: number) {
     setSelecionados((prev) => {
@@ -39,6 +73,13 @@ export function ListaDoDia({ todosJogadores, jogadoresSelecionados, data, onFech
       return next
     })
   }
+
+  const termo = normalizar(busca.trim())
+  const jogadoresFiltrados = termo
+    ? todosJogadores.filter(
+        (j) => normalizar(j.nome).includes(termo) || (j.apelido && normalizar(j.apelido).includes(termo))
+      )
+    : todosJogadores
 
   async function fecharLista() {
     if (selecionados.size === 0) { toast.error('Selecione ao menos 1 jogador'); return }
@@ -87,8 +128,34 @@ export function ListaDoDia({ todosJogadores, jogadoresSelecionados, data, onFech
         </button>
       </div>
 
+      <div className="relative">
+        <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+        <input
+          type="text"
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar jogador..."
+          className="w-full pl-10 pr-9 py-2.5 rounded-xl font-barlow-condensed text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-gold/20"
+          style={{ background: '#111111', border: '1px solid #242424' }}
+        />
+        {busca && (
+          <button
+            onClick={() => setBusca('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            aria-label="Limpar busca"
+          >
+            <X size={15} />
+          </button>
+        )}
+      </div>
+
       <div className="space-y-1.5">
-        {todosJogadores.map((jogador, idx) => {
+        {jogadoresFiltrados.length === 0 && (
+          <p className="text-center py-6 text-muted-foreground font-barlow-condensed text-sm">
+            Nenhum jogador encontrado
+          </p>
+        )}
+        {jogadoresFiltrados.map((jogador, idx) => {
           const ativo = selecionados.has(jogador.id)
           return (
             <button
