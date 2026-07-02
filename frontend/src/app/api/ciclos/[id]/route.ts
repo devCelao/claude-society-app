@@ -6,7 +6,7 @@ export type StatJogador = {
   nome: string
   valor: number
   vitorias: number
-  pontos: number
+  empates: number
 }
 
 export type CicloStats = {
@@ -30,6 +30,23 @@ async function vitoriasPorJogador(cicloId: number): Promise<Map<number, number>>
   `
   const map = new Map<number, number>()
   for (const r of rows) map.set(Number(r.jogador_id), Number(r.v))
+  return map
+}
+
+async function empatesPorJogador(cicloId: number): Promise<Map<number, number>> {
+  const rows = await prisma.$queryRaw<{ jogador_id: bigint; e: bigint }[]>`
+    SELECT jt.jogador_id, COUNT(DISTINCT p.id) AS e
+    FROM jogador_time jt
+    JOIN times t        ON jt.time_id          = t.id
+    JOIN partidas p     ON (p.time_a_id = t.id OR p.time_b_id = t.id)
+    JOIN dias_de_jogo d ON p.dia_de_jogo_id    = d.id
+    WHERE d.ciclo_id = ${cicloId}
+      AND p.status = 'FINALIZADA'
+      AND p.vencedor_id IS NULL
+    GROUP BY jt.jogador_id
+  `
+  const map = new Map<number, number>()
+  for (const r of rows) map.set(Number(r.jogador_id), Number(r.e))
   return map
 }
 
@@ -57,8 +74,6 @@ export async function GET(
       JOIN jogadores j    ON g.jogador_id        = j.id
       WHERE d.ciclo_id = ${cicloId}
       GROUP BY j.id, j.nome
-      ORDER BY valor DESC
-      LIMIT 10
     `
 
     const rawPasses = await prisma.$queryRaw<RawGolStat[]>`
@@ -70,8 +85,6 @@ export async function GET(
       JOIN jogadores j    ON a.jogador_id          = j.id
       WHERE d.ciclo_id = ${cicloId}
       GROUP BY j.id, j.nome
-      ORDER BY valor DESC
-      LIMIT 10
     `
 
     // Fotos = dias de jogo em que o jogador esteve no time campeao do dia
@@ -100,15 +113,45 @@ export async function GET(
       JOIN jogador_time jt ON jt.time_id = cd.time_id
       JOIN jogadores j     ON j.id = jt.jogador_id
       GROUP BY j.id, j.nome
-      ORDER BY valor DESC
-      LIMIT 10
     `
 
-    const withVitorias = (rows: RawGolStat[]): StatJogador[] =>
-      rows.map((r, i) => {
-        const v = vMap.get(Number(r.id)) ?? 0
-        return { posicao: i + 1, nome: r.nome, valor: Number(r.valor), vitorias: v, pontos: v * 3 }
-      })
+    const eMap = await empatesPorJogador(cicloId)
+
+    // Ordena por valor, depois vitorias, depois empates (todos DESC).
+    // Jogadores empatados nos 3 criterios dividem a mesma posicao; a
+    // proxima posicao distinta pula os numeros correspondentes
+    // (ex.: 1, 1, 3). Corta em top 10 POSICOES, nao top 10 linhas.
+    const montarRanking = (rows: RawGolStat[]): StatJogador[] => {
+      const ordenados = rows
+        .map((r) => ({
+          nome: r.nome,
+          valor: Number(r.valor),
+          vitorias: vMap.get(Number(r.id)) ?? 0,
+          empates: eMap.get(Number(r.id)) ?? 0,
+        }))
+        .sort((a, b) => b.valor - a.valor || b.vitorias - a.vitorias || b.empates - a.empates)
+
+      const comPosicao: StatJogador[] = []
+      let posicaoAtual = 0
+      let anterior: { valor: number; vitorias: number; empates: number } | null = null
+
+      for (let i = 0; i < ordenados.length; i++) {
+        const atual = ordenados[i]
+        const empatouComAnterior =
+          anterior !== null &&
+          atual.valor === anterior.valor &&
+          atual.vitorias === anterior.vitorias &&
+          atual.empates === anterior.empates
+
+        if (!empatouComAnterior) posicaoAtual = i + 1
+        if (posicaoAtual > 10) break
+
+        comPosicao.push({ ...atual, posicao: posicaoAtual })
+        anterior = atual
+      }
+
+      return comPosicao
+    }
 
     const data: CicloStats = {
       ciclo: {
@@ -117,9 +160,9 @@ export async function GET(
         inicioEm: ciclo.inicioEm.toISOString().split('T')[0],
         fimEm: ciclo.fimEm ? ciclo.fimEm.toISOString().split('T')[0] : null,
       },
-      artilharia: withVitorias(rawArtilharia),
-      passes: withVitorias(rawPasses),
-      fotos: withVitorias(rawFotos),
+      artilharia: montarRanking(rawArtilharia),
+      passes: montarRanking(rawPasses),
+      fotos: montarRanking(rawFotos),
     }
 
     return NextResponse.json(data)
