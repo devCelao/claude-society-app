@@ -15,10 +15,11 @@ export default async function DiaDeJogoPage({
   const dia = await prisma.diaDeJogo.findUnique({
     where: { id: diaId },
     include: {
+      ciclo: { select: { nome: true } },
       times: {
         include: {
           jogadorTimes: {
-            include: { jogador: { select: { id: true, nome: true, apelido: true, convidado: true, posicaoPrimaria: { select: { sigla: true } }, posicaoSecundaria: { select: { sigla: true } } } } },
+            include: { jogador: { select: { id: true, nome: true, apelido: true, convidado: true, posicaoPrimaria: { select: { sigla: true, cor: true, ordem: true } }, posicaoSecundaria: { select: { sigla: true, cor: true, ordem: true } } } } },
           },
         },
       },
@@ -38,7 +39,13 @@ export default async function DiaDeJogoPage({
   const todosJogadores: Jogador[] = await prisma.jogador.findMany({
     where: { deletedAt: null },
     orderBy: { nome: 'asc' },
-    select: { id: true, nome: true, apelido: true, convidado: true, posicaoPrimaria: { select: { sigla: true } }, posicaoSecundaria: { select: { sigla: true } } },
+    select: { id: true, nome: true, apelido: true, convidado: true, posicaoPrimaria: { select: { sigla: true, cor: true, ordem: true } }, posicaoSecundaria: { select: { sigla: true, cor: true, ordem: true } } },
+  })
+
+  const posicoes = await prisma.posicao.findMany({
+    where: { ativo: true },
+    orderBy: [{ ordem: 'asc' }, { nome: 'asc' }],
+    select: { id: true, nome: true, sigla: true, cor: true, ordem: true },
   })
 
   // Times/jogador_time agora persistem incrementalmente durante 'lista' e 'times' (autosave),
@@ -84,7 +91,8 @@ export default async function DiaDeJogoPage({
   }))
 
   const golsDia = await prisma.gol.findMany({
-    where: { partida: { diaDeJogoId: diaId } },
+    // Gol contra conta no placar, mas nao na artilharia
+    where: { partida: { diaDeJogoId: diaId }, golContra: false },
     select: { jogadorId: true, assistencia: { select: { jogadorId: true } } },
   })
 
@@ -105,10 +113,12 @@ export default async function DiaDeJogoPage({
         diaId={dia.id}
         data={dia.data ? dia.data.toISOString().split('T')[0] : null}
         status={dia.status}
+        cicloNome={dia.ciclo?.nome ?? null}
         passoinicial={passo}
         jogadoresSelecionadosInicial={jogadoresSelecionados}
         timesIniciais={times}
         todosJogadores={todosJogadores}
+        posicoes={posicoes}
         partidasIniciais={partidas}
         statsJogadores={statsJogadores}
       />

@@ -1,15 +1,19 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Check, Users } from 'lucide-react'
-import type { Jogador } from './DiaDeJogoFlow'
+import { Check, UserPlus, Users } from 'lucide-react'
+import type { Jogador as JogadorDb } from '@/types'
+import { NovoJogadorDialog } from '@/components/jogadores/NovoJogadorDialog'
+import type { Jogador, PosicaoOpcao } from './DiaDeJogoFlow'
 
 interface Props {
   diaId: number
   data: string
   todosJogadores: Jogador[]
   jogadoresSelecionados: Jogador[]
+  posicoes: PosicaoOpcao[]
   onFechar: (jogadores: Jogador[]) => Promise<void>
 }
 
@@ -18,11 +22,39 @@ function formatData(iso: string) {
   return d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
-export function ListaDoDia({ todosJogadores, jogadoresSelecionados, data, onFechar }: Props) {
+export function ListaDoDia({ todosJogadores: jogadoresIniciais, jogadoresSelecionados, posicoes, data, onFechar }: Props) {
+  const router = useRouter()
+  // Estado local para receber jogadores cadastrados pelo modal sem recarregar a pagina
+  const [todosJogadores, setTodosJogadores] = useState<Jogador[]>(jogadoresIniciais)
   const [selecionados, setSelecionados] = useState<Set<number>>(
     new Set(jogadoresSelecionados.map((j) => j.id))
   )
   const [salvando, setSalvando] = useState(false)
+  const [novoAberto, setNovoAberto] = useState(false)
+
+  function handleJogadorCriado(criado: JogadorDb) {
+    const sigla = (id: number | null) => {
+      const p = posicoes.find((pos) => pos.id === id)
+      return p ? { sigla: p.sigla, cor: p.cor, ordem: p.ordem } : null
+    }
+    const novo: Jogador = {
+      id: criado.id,
+      nome: criado.nome,
+      apelido: criado.apelido,
+      convidado: criado.convidado,
+      posicaoPrimaria: sigla(criado.posicaoPrimariaId),
+      posicaoSecundaria: sigla(criado.posicaoSecundariaId),
+    }
+    setTodosJogadores((prev) =>
+      [...prev, novo].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+    )
+    if (selecionados.size >= 18) {
+      toast.warning('Lista cheia: jogador adicionado sem selecionar')
+    } else {
+      setSelecionados((prev) => new Set(prev).add(novo.id))
+    }
+    router.refresh()
+  }
 
   function toggle(id: number) {
     setSelecionados((prev) => {
@@ -86,6 +118,22 @@ export function ListaDoDia({ todosJogadores, jogadoresSelecionados, data, onFech
           {salvando ? 'Fechando...' : 'Fechar Lista'}
         </button>
       </div>
+
+      <button
+        onClick={() => setNovoAberto(true)}
+        className="w-full min-h-12 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-dashed font-barlow-condensed text-sm font-semibold tracking-wide transition-colors hover:bg-white/5"
+        style={{ borderColor: 'rgba(245,196,0,0.35)', color: '#f5c400' }}
+      >
+        <UserPlus size={16} />
+        Novo jogador
+      </button>
+
+      <NovoJogadorDialog
+        open={novoAberto}
+        onOpenChange={setNovoAberto}
+        posicoes={posicoes}
+        onCriado={handleJogadorCriado}
+      />
 
       <div className="space-y-1.5">
         {todosJogadores.map((jogador, idx) => {

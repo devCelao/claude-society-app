@@ -16,7 +16,12 @@ export default async function DashboardPage() {
         include: {
           jogadorTimes: {
             include: {
-              jogador: { select: { id: true, nome: true, apelido: true, convidado: true } },
+              jogador: {
+                select: {
+                  id: true, nome: true, apelido: true, convidado: true,
+                  posicaoPrimaria: { select: { sigla: true, cor: true, ordem: true } },
+                },
+              },
             },
           },
         },
@@ -41,17 +46,15 @@ export default async function DashboardPage() {
   return (
     <main className="p-6 space-y-6">
       <DashboardRefresher />
-      <div>
-        <div className="w-8 h-[3px] rounded-sm mb-2" style={{ background: '#f5c400' }} />
-        <h1 className="font-bebas text-5xl md:text-6xl tracking-widest leading-none text-foreground">
-          AO VIVO
-        </h1>
-        {dia?.ciclo?.nome && (
-          <p className="font-barlow-condensed text-sm text-muted-foreground mt-1.5 tracking-wide">
-            Ciclo: <span style={{ color: '#f5c400', fontWeight: 600 }}>{dia.ciclo.nome}</span>
-          </p>
-        )}
-      </div>
+      {/* Com confronto em andamento, o cabeçalho (com as ações) é renderizado pelo AoVivo */}
+      {!dia && (
+        <div>
+          <div className="w-8 h-[3px] rounded-sm mb-2" style={{ background: '#f5c400' }} />
+          <h1 className="font-bebas text-5xl md:text-6xl tracking-widest leading-none text-foreground">
+            AO VIVO
+          </h1>
+        </div>
+      )}
 
       {dia ? (
         <AoVivo
@@ -82,6 +85,7 @@ export default async function DashboardPage() {
               timeId: g.timeId,
               jogadorId: g.jogadorId,
               jogadorNome: g.jogador.nome,
+              golContra: g.golContra,
               assistenciaJogadorId: g.assistencia?.jogadorId ?? null,
               assistenciaJogadorNome: g.assistencia?.jogador.nome ?? null,
             })),

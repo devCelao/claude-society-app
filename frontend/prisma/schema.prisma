@@ -151,6 +151,8 @@ model Gol {
   partidaId Int      @map("partida_id")
   timeId    Int      @map("time_id")
   jogadorId Int      @map("jogador_id")
+  // Gol contra: jogadorId e do time adversario; conta no placar de timeId, nao na artilharia
+  golContra Boolean  @default(false) @map("gol_contra")
   createdAt DateTime @default(now()) @map("created_at")
 
   partida    Partida      @relation(fields: [partidaId], references: [id])

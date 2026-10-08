@@ -2,26 +2,22 @@
 
 import { useState, useRef } from 'react'
 import Link from 'next/link'
-import { Users, Pencil, Play, ArrowLeft, ImageDown, ClipboardList } from 'lucide-react'
+import { Users, Pencil, Play, ArrowLeft, ImageDown, ClipboardList, Trophy } from 'lucide-react'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import { parse } from 'date-fns'
 import { toBlob } from 'html-to-image'
 import type { TimeFormado, Partida, StatsJogadores } from './DiaDeJogoFlow'
 import { PartidaAuditoria } from '@/components/partidas/PartidaAuditoria'
+import { getCorTime } from '@/lib/cores-time'
+import { ImagemTimes } from './ImagemTimes'
+import { ImagemResumo } from './ImagemResumo'
 
-type CorTime = 'vermelho' | 'azul' | 'verde' | 'laranja'
-
-const COR_HEX: Record<CorTime, string> = {
-  vermelho: '#ef4444',
-  azul:     '#3b82f6',
-  verde:    '#22c55e',
-  laranja:  '#f97316',
-}
 
 interface Props {
   diaId: number
   data: string | null
+  cicloNome: string | null
   times: TimeFormado[]
   status: 'PENDENTE' | 'EM_ANDAMENTO' | 'FINALIZADO'
   partidas: Partida[]
@@ -47,12 +43,14 @@ const STATUS_LABEL: Record<string, string> = {
   FINALIZADO:   'Finalizado',
 }
 
-export function DiaDeJogoMain({ diaId, data, times, status, partidas, statsJogadores, onEditarTimes, onIniciado }: Props) {
+export function DiaDeJogoMain({ diaId, data, cicloNome, times, status, partidas, statsJogadores, onEditarTimes, onIniciado }: Props) {
   const router = useRouter()
   const [iniciando, setIniciando] = useState(false)
   const [modoAuditoria, setModoAuditoria] = useState(false)
-  const [gerandoImagem, setGerandoImagem] = useState(false)
+  // Qual imagem esta sendo gerada: times (escalacao) ou resumo (placar do dia)
+  const [gerandoImagem, setGerandoImagem] = useState<'times' | 'resumo' | null>(null)
   const capturaRef = useRef<HTMLDivElement>(null)
+  const resumoRef = useRef<HTMLDivElement>(null)
 
   const totalJogadores = times.reduce((s, t) => s + t.jogadores.length, 0)
   const finalizadas = partidas.filter((p) => p.status === 'FINALIZADA')
@@ -91,13 +89,13 @@ export function DiaDeJogoMain({ diaId, data, times, status, partidas, statsJogad
     }
   }
 
-  async function capturarImagem(): Promise<Blob> {
-    const node = capturaRef.current
+  async function capturarImagem(tipo: 'times' | 'resumo'): Promise<Blob> {
+    const node = tipo === 'times' ? capturaRef.current : resumoRef.current
     if (!node) throw new Error('Nada para capturar')
     await esperarLayoutEstabilizar(node)
     const blob = await toBlob(node, {
       pixelRatio: 2,
-      backgroundColor: '#ffffff',
+      backgroundColor: '#0a0a0a',
       width: node.scrollWidth,
       height: node.scrollHeight,
     })
@@ -105,9 +103,9 @@ export function DiaDeJogoMain({ diaId, data, times, status, partidas, statsJogad
     return blob
   }
 
-  async function handleCopiarImagem() {
-    setGerandoImagem(true)
-    const blobPromise = capturarImagem()
+  async function handleCopiarImagem(tipo: 'times' | 'resumo') {
+    setGerandoImagem(tipo)
+    const blobPromise = capturarImagem(tipo)
 
     try {
       const temClipboardImagem =
@@ -124,12 +122,12 @@ export function DiaDeJogoMain({ diaId, data, times, status, partidas, statsJogad
       }
 
       const blob = await blobPromise
-      const nomeArquivo = `confronto-${data ?? diaId}.png`
+      const nomeArquivo = `${tipo === 'times' ? 'times' : 'resumo'}-${data ?? diaId}.png`
       const file = new File([blob], nomeArquivo, { type: 'image/png' })
 
       if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
         try {
-          await navigator.share({ files: [file], title: 'Confronto' })
+          await navigator.share({ files: [file], title: tipo === 'times' ? 'Times do dia' : 'Resumo do dia' })
           return
         } catch (err) {
           if (err instanceof Error && err.name === 'AbortError') return
@@ -147,7 +145,7 @@ export function DiaDeJogoMain({ diaId, data, times, status, partidas, statsJogad
     } catch {
       toast.error('Não foi possível gerar a imagem')
     } finally {
-      setGerandoImagem(false)
+      setGerandoImagem(null)
     }
   }
 
@@ -159,42 +157,24 @@ export function DiaDeJogoMain({ diaId, data, times, status, partidas, statsJogad
         o motivo (html-to-image clona o "position:fixed" do próprio nó
         capturado, deslocando o conteúdo pra fora da imagem gerada). */}
     <div
-      className={gerandoImagem ? 'block' : 'hidden print:block'}
-      style={gerandoImagem ? { position: 'fixed', top: 0, left: -9999 } : undefined}
+      className={gerandoImagem === 'times' ? 'block' : 'hidden print:block'}
+      style={gerandoImagem === 'times' ? { position: 'fixed', top: 0, left: -9999 } : undefined}
     >
-      <div ref={capturaRef} style={{ fontFamily: 'sans-serif', color: '#000', background: '#fff', padding: 16, width: 720 }}>
-        {/* Título */}
-        <div style={{ marginBottom: 20, borderBottom: '3px solid #f5c400', paddingBottom: 10 }}>
-          <h1 style={{ fontSize: 26, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 2, margin: 0 }}>
-            {data ? formatData(data) : 'Confronto'}
-          </h1>
-          <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
-            Gerado em {new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-            {' às '}
-            {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-          </div>
-        </div>
-
-        {/* Times — 3 colunas de largura fixa (evitar grid/fr: html-to-image
-            não resolve bem fração de coluna) — só jogadores, sem stats */}
-        <div style={{ display: 'flex' }}>
-          {times.map((time) => {
-            const hex = COR_HEX[time.cor as CorTime] ?? '#888'
-            return (
-              <div key={time.nome} style={{ width: 213, marginRight: 16, borderLeft: `3px solid ${hex}`, paddingLeft: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', color: hex, marginBottom: 6, letterSpacing: 1 }}>
-                  {time.nome}
-                </div>
-                {time.jogadores.map((j) => (
-                  <div key={j.id} style={{ fontSize: 12, paddingBottom: 3 }}>
-                    {j.nome}{j.convidado ? ' (G)' : ''}
-                  </div>
-                ))}
-              </div>
-            )
-          })}
-        </div>
-      </div>
+      <ImagemTimes ref={capturaRef} times={times} data={data} cicloNome={cicloNome} />
+    </div>
+    {/* Sempre montado (escondido): o ref precisa existir quando a captura comeca */}
+    <div
+      className={gerandoImagem === 'resumo' ? 'block print:hidden' : 'hidden'}
+      style={gerandoImagem === 'resumo' ? { position: 'fixed', top: 0, left: -9999 } : undefined}
+    >
+      <ImagemResumo
+        ref={resumoRef}
+        times={times}
+        partidas={partidas}
+        statsJogadores={statsJogadores}
+        data={data}
+        cicloNome={cicloNome}
+      />
     </div>
 
     {/* ── Screen view ────────────────────────────────────────────────────────── */}
@@ -233,15 +213,15 @@ export function DiaDeJogoMain({ diaId, data, times, status, partidas, statsJogad
                 Editar
               </button>
               <button
-                onClick={handleCopiarImagem}
-                disabled={gerandoImagem}
+                onClick={() => handleCopiarImagem('times')}
+                disabled={gerandoImagem !== null}
                 className="flex items-center justify-center gap-1.5 whitespace-nowrap px-3 py-1.5 rounded-lg font-barlow-condensed text-xs tracking-wide border transition-colors disabled:opacity-40"
                 style={{ borderColor: '#333', color: '#888', background: 'transparent' }}
                 onMouseEnter={(e) => { e.currentTarget.style.color = '#f0ede0'; e.currentTarget.style.borderColor = '#555' }}
                 onMouseLeave={(e) => { e.currentTarget.style.color = '#888'; e.currentTarget.style.borderColor = '#333' }}
               >
-                <ImageDown size={12} className={gerandoImagem ? 'animate-pulse' : ''} />
-                {gerandoImagem ? 'Gerando...' : 'Copiar imagem'}
+                <ImageDown size={12} className={gerandoImagem === 'times' ? 'animate-pulse' : ''} />
+                {gerandoImagem === 'times' ? 'Gerando...' : 'Imagem dos times'}
               </button>
               <button
                 onClick={() => handleIniciar()}
@@ -278,15 +258,26 @@ export function DiaDeJogoMain({ diaId, data, times, status, partidas, statsJogad
                 {modoAuditoria ? 'Fechar Auditoria' : 'Auditoria'}
               </button>
               <button
-                onClick={handleCopiarImagem}
-                disabled={gerandoImagem}
+                onClick={() => handleCopiarImagem('times')}
+                disabled={gerandoImagem !== null}
                 className="flex items-center justify-center gap-1.5 whitespace-nowrap px-3 py-1.5 rounded-lg font-barlow-condensed text-xs tracking-wide border transition-colors disabled:opacity-40"
                 style={{ borderColor: '#333', color: '#888', background: 'transparent' }}
                 onMouseEnter={(e) => { e.currentTarget.style.color = '#f0ede0'; e.currentTarget.style.borderColor = '#555' }}
                 onMouseLeave={(e) => { e.currentTarget.style.color = '#888'; e.currentTarget.style.borderColor = '#333' }}
               >
-                <ImageDown size={12} className={gerandoImagem ? 'animate-pulse' : ''} />
-                {gerandoImagem ? 'Gerando...' : 'Copiar imagem'}
+                <ImageDown size={12} className={gerandoImagem === 'times' ? 'animate-pulse' : ''} />
+                {gerandoImagem === 'times' ? 'Gerando...' : 'Imagem dos times'}
+              </button>
+              <button
+                onClick={() => handleCopiarImagem('resumo')}
+                disabled={gerandoImagem !== null}
+                className="flex items-center justify-center gap-1.5 whitespace-nowrap px-3 py-1.5 rounded-lg font-barlow-condensed text-xs tracking-wide border transition-colors disabled:opacity-40"
+                style={{ borderColor: '#333', color: '#888', background: 'transparent' }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = '#f0ede0'; e.currentTarget.style.borderColor = '#555' }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = '#888'; e.currentTarget.style.borderColor = '#333' }}
+              >
+                <Trophy size={12} className={gerandoImagem === 'resumo' ? 'animate-pulse' : ''} />
+                {gerandoImagem === 'resumo' ? 'Gerando...' : 'Imagem do resumo'}
               </button>
               <Link
                 href="/dias-de-jogo"
@@ -341,14 +332,15 @@ export function DiaDeJogoMain({ diaId, data, times, status, partidas, statsJogad
       {/* Times */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {times.map((time, idx) => {
-          const hex = COR_HEX[time.cor as CorTime]
+          const cor = getCorTime(time.cor)
+          const hex = cor.hex
           return (
             <div key={idx} className="rounded-xl border overflow-hidden" style={{ borderColor: `${hex}40`, background: '#111111' }}>
               <div className="px-4 py-3 flex items-center justify-between" style={{ background: `${hex}18`, borderBottom: `1px solid ${hex}30` }}>
                 <span className="font-bebas tracking-widest text-xl" style={{ color: hex }}>{time.nome}</span>
                 <div className="flex items-center gap-1.5 font-barlow-condensed text-xs" style={{ color: hex }}>
                   <div className="w-2.5 h-2.5 rounded-full" style={{ background: hex }} />
-                  <span className="capitalize">{time.cor}</span>
+                  <span>{cor.label}</span>
                 </div>
               </div>
               <div className="p-3 space-y-1">
@@ -394,8 +386,8 @@ export function DiaDeJogoMain({ diaId, data, times, status, partidas, statsJogad
           return (
             <div className="space-y-2">
               {finalizadas.map((p, i) => {
-                const hexA = COR_HEX[p.timeACor as CorTime] ?? '#888'
-                const hexB = COR_HEX[p.timeBCor as CorTime] ?? '#888'
+                const hexA = getCorTime(p.timeACor).hex
+                const hexB = getCorTime(p.timeBCor).hex
                 const vencedorNome = p.vencedorId === p.timeAId
                   ? p.timeANome
                   : p.vencedorId === p.timeBId

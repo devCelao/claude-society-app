@@ -6,10 +6,14 @@ import { toast } from 'sonner'
 import { ListaDoDia } from './ListaDoDia'
 import { MontarTimes } from './MontarTimes'
 import { DiaDeJogoMain } from './DiaDeJogoMain'
+import type { PosicaoResumo } from '@/types'
 
-type CorTime = 'vermelho' | 'azul' | 'verde' | 'laranja'
+import type { CorTime } from '@/lib/cores-time'
 
-export type PosicaoSigla = { sigla: string } | null
+export type PosicaoSigla = { sigla: string; cor: string; ordem: number } | null
+
+// Posicao ativa disponivel no cadastro rapido (ordem usada para ordenar a imagem dos times)
+export type PosicaoOpcao = PosicaoResumo & { ordem: number }
 
 export type Jogador = {
   id: number
@@ -49,10 +53,12 @@ interface Props {
   diaId: number
   data: string | null
   status: 'PENDENTE' | 'EM_ANDAMENTO' | 'FINALIZADO'
+  cicloNome: string | null
   passoinicial: Passo
   jogadoresSelecionadosInicial: Jogador[]
   timesIniciais: TimeFormado[]
   todosJogadores: Jogador[]
+  posicoes: PosicaoOpcao[]
   partidasIniciais: Partida[]
   statsJogadores: StatsJogadores
 }
@@ -61,10 +67,12 @@ export function DiaDeJogoFlow({
   diaId,
   data,
   status: statusInicial,
+  cicloNome,
   passoinicial,
   jogadoresSelecionadosInicial,
   timesIniciais,
   todosJogadores,
+  posicoes,
   partidasIniciais,
   statsJogadores,
 }: Props) {
@@ -163,6 +171,7 @@ export function DiaDeJogoFlow({
         data={data ?? ''}
         todosJogadores={todosJogadores}
         jogadoresSelecionados={jogadoresSelecionados}
+        posicoes={posicoes}
         onFechar={handleFecharLista}
       />
     )
@@ -185,6 +194,7 @@ export function DiaDeJogoFlow({
     <DiaDeJogoMain
       diaId={diaId}
       data={data}
+      cicloNome={cicloNome}
       times={times}
       status={status}
       partidas={partidas}

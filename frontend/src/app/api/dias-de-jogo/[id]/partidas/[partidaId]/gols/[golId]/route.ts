@@ -32,6 +32,8 @@ async function buscarGol(golId: number, pId: number, diaId: number) {
       partida: {
         select: {
           status: true,
+          timeAId: true,
+          timeBId: true,
           diaDeJogo: { select: { status: true } },
         },
       },
@@ -61,13 +63,24 @@ export async function PATCH(
 
     const { jogadorId, assistenciaJogadorId } = result.data
 
+    // Gol contra: o autor e do time adversario e nao ha assistencia
+    if (gol.golContra && assistenciaJogadorId) {
+      return NextResponse.json({ error: 'Gol contra nao tem assistencia' }, { status: 400 })
+    }
+    const timeDoAutorId = gol.golContra
+      ? (gol.timeId === gol.partida.timeAId ? gol.partida.timeBId : gol.partida.timeAId)
+      : gol.timeId
+
     let novoJogadorId = gol.jogadorId
     if (jogadorId !== undefined && jogadorId !== gol.jogadorId) {
       const pertence = await prisma.jogadorTime.findFirst({
-        where: { timeId: gol.timeId, jogadorId },
+        where: { timeId: timeDoAutorId, jogadorId },
       })
       if (!pertence) {
-        return NextResponse.json({ error: 'Jogador nao pertence a este time' }, { status: 400 })
+        return NextResponse.json(
+          { error: gol.golContra ? 'Gol contra deve ser de um jogador do time adversario' : 'Jogador nao pertence a este time' },
+          { status: 400 }
+        )
       }
       novoJogadorId = jogadorId
     }

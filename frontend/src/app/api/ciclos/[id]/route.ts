@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { Prisma } from '@/generated/prisma/client'
 
 export type StatJogador = {
   posicao: number
@@ -18,7 +19,13 @@ export type CicloStats = {
 
 type RawGolStat = { id: bigint; nome: string; valor: bigint }
 
-async function vitoriasPorJogador(cicloId: number): Promise<Map<number, number>> {
+// Filtro opcional (?finalizados=1): considera apenas confrontos encerrados.
+// Aplicado em todas as consultas do ranking para manter as tabelas consistentes.
+function filtroDias(soFinalizados: boolean) {
+  return soFinalizados ? Prisma.sql`AND d.status = 'FINALIZADO'` : Prisma.empty
+}
+
+async function vitoriasPorJogador(cicloId: number, soFinalizados: boolean): Promise<Map<number, number>> {
   const rows = await prisma.$queryRaw<{ jogador_id: bigint; v: bigint }[]>`
     SELECT jt.jogador_id, COUNT(DISTINCT p.id) AS v
     FROM jogador_time jt
@@ -26,6 +33,7 @@ async function vitoriasPorJogador(cicloId: number): Promise<Map<number, number>>
     JOIN partidas p    ON p.vencedor_id       = t.id
     JOIN dias_de_jogo d ON p.dia_de_jogo_id  = d.id
     WHERE d.ciclo_id = ${cicloId}
+      ${filtroDias(soFinalizados)}
     GROUP BY jt.jogador_id
   `
   const map = new Map<number, number>()
@@ -33,7 +41,7 @@ async function vitoriasPorJogador(cicloId: number): Promise<Map<number, number>>
   return map
 }
 
-async function empatesPorJogador(cicloId: number): Promise<Map<number, number>> {
+async function empatesPorJogador(cicloId: number, soFinalizados: boolean): Promise<Map<number, number>> {
   const rows = await prisma.$queryRaw<{ jogador_id: bigint; e: bigint }[]>`
     SELECT jt.jogador_id, COUNT(DISTINCT p.id) AS e
     FROM jogador_time jt
@@ -43,6 +51,7 @@ async function empatesPorJogador(cicloId: number): Promise<Map<number, number>> 
     WHERE d.ciclo_id = ${cicloId}
       AND p.status = 'FINALIZADA'
       AND p.vencedor_id IS NULL
+      ${filtroDias(soFinalizados)}
     GROUP BY jt.jogador_id
   `
   const map = new Map<number, number>()
@@ -51,12 +60,13 @@ async function empatesPorJogador(cicloId: number): Promise<Map<number, number>> 
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params
     const cicloId = parseInt(id, 10)
+    const soFinalizados = new URL(req.url).searchParams.get('finalizados') === '1'
 
     const ciclo = await prisma.ciclo.findUnique({
       where: { id: cicloId },
@@ -64,7 +74,7 @@ export async function GET(
     })
     if (!ciclo) return NextResponse.json({ error: 'Ciclo nao encontrado' }, { status: 404 })
 
-    const vMap = await vitoriasPorJogador(cicloId)
+    const vMap = await vitoriasPorJogador(cicloId, soFinalizados)
 
     const rawArtilharia = await prisma.$queryRaw<RawGolStat[]>`
       SELECT j.id, j.nome, COUNT(g.id) AS valor
@@ -73,6 +83,8 @@ export async function GET(
       JOIN dias_de_jogo d ON p.dia_de_jogo_id   = d.id
       JOIN jogadores j    ON g.jogador_id        = j.id
       WHERE d.ciclo_id = ${cicloId}
+        AND g.gol_contra = false
+        ${filtroDias(soFinalizados)}
       GROUP BY j.id, j.nome
     `
 
@@ -84,12 +96,13 @@ export async function GET(
       JOIN dias_de_jogo d ON p.dia_de_jogo_id     = d.id
       JOIN jogadores j    ON a.jogador_id          = j.id
       WHERE d.ciclo_id = ${cicloId}
+        ${filtroDias(soFinalizados)}
       GROUP BY j.id, j.nome
     `
 
     // Fotos = dias de jogo em que o jogador esteve no time campeao do dia
-    // (time com mais partidas vencidas naquele dia; empate = todos os times
-    // empatados contam como campeoes do dia).
+    // (time com mais partidas vencidas naquele dia). Se dois ou mais times
+    // empatarem no topo, nao ha campeao e ninguem ganha foto naquele dia.
     const rawFotos = await prisma.$queryRaw<RawGolStat[]>`
       WITH vitorias_por_time_dia AS (
         SELECT p.dia_de_jogo_id AS dia_id, t.id AS time_id, COUNT(*) AS vitorias
@@ -97,9 +110,10 @@ export async function GET(
         JOIN times t        ON t.id = p.vencedor_id
         JOIN dias_de_jogo d ON d.id = p.dia_de_jogo_id
         WHERE d.ciclo_id = ${cicloId}
+          ${filtroDias(soFinalizados)}
         GROUP BY p.dia_de_jogo_id, t.id
       ),
-      campeao_do_dia AS (
+      lideres_do_dia AS (
         SELECT dia_id, time_id
         FROM (
           SELECT dia_id, time_id,
@@ -107,6 +121,12 @@ export async function GET(
           FROM vitorias_por_time_dia
         ) ranked
         WHERE posicao = 1
+      ),
+      campeao_do_dia AS (
+        SELECT dia_id, MIN(time_id) AS time_id
+        FROM lideres_do_dia
+        GROUP BY dia_id
+        HAVING COUNT(*) = 1
       )
       SELECT j.id, j.nome, COUNT(DISTINCT cd.dia_id) AS valor
       FROM campeao_do_dia cd
@@ -115,7 +135,7 @@ export async function GET(
       GROUP BY j.id, j.nome
     `
 
-    const eMap = await empatesPorJogador(cicloId)
+    const eMap = await empatesPorJogador(cicloId, soFinalizados)
 
     // Ordena por valor, depois vitorias, depois empates (todos DESC).
     // Jogadores empatados nos 3 criterios dividem a mesma posicao; a
