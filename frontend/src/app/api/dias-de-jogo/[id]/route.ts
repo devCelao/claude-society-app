@@ -95,6 +95,24 @@ export async function PATCH(
     const dia = await prisma.diaDeJogo.findUnique({ where: { id: diaId } })
     if (!dia) return NextResponse.json({ error: 'Nao encontrado' }, { status: 404 })
 
+    // Autosave da lista (marcar/desmarcar jogador) - nao avanca o passo.
+    // Mesma limpeza de jogador_time do fluxo "times", mas sem tocar em dia.passo.
+    if (body.passo === undefined && Array.isArray(body.jogadorIds)) {
+      await prisma.diaDeJogo.update({ where: { id: diaId }, data: { listaJogadorIds: body.jogadorIds } })
+
+      const timesExistentes = await prisma.time.findMany({ where: { diaDeJogoId: diaId }, select: { id: true } })
+      if (timesExistentes.length > 0) {
+        await prisma.jogadorTime.deleteMany({
+          where: {
+            timeId: { in: timesExistentes.map((t) => t.id) },
+            jogadorId: { notIn: body.jogadorIds },
+          },
+        })
+      }
+
+      return NextResponse.json({ id: diaId, listaJogadorIds: body.jogadorIds })
+    }
+
     // Transição lista → times: persiste passo + jogadores selecionados.
     // Jogadores que saíram da lista sao removidos dos times ja montados (autosave incremental).
     if (body.passo === 'times') {
