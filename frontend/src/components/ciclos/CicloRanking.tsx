@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { ImageDown, FlagTriangleRight } from 'lucide-react'
+import { ImageDown, FlagTriangleRight, Filter, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { toBlob } from 'html-to-image'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -132,6 +132,8 @@ export function CicloRanking({ ciclos, cicloIdInicial }: Props) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const [cicloId, setCicloId] = useState(cicloIdInicial)
+  // Filtro opcional: so confrontos finalizados (persistido na URL como ?finalizados=1)
+  const [soFinalizados, setSoFinalizados] = useState(searchParams.get('finalizados') === '1')
   const [stats, setStats] = useState<CicloStats | null>(null)
   const [carregando, setCarregando] = useState(true)
   const [confirmFinalizarOpen, setConfirmFinalizarOpen] = useState(false)
@@ -142,10 +144,10 @@ export function CicloRanking({ ciclos, cicloIdInicial }: Props) {
   const cicloAtual = ciclos.find((c) => c.id === cicloId)
   const cicloEhAtivo = cicloAtual?.fimEm === null
 
-  const buscarStats = useCallback(async (id: number) => {
+  const buscarStats = useCallback(async (id: number, finalizados: boolean) => {
     setCarregando(true)
     try {
-      const res = await fetch(`/api/ciclos/${id}`)
+      const res = await fetch(`/api/ciclos/${id}${finalizados ? '?finalizados=1' : ''}`)
       if (res.ok) setStats(await res.json())
     } finally {
       setCarregando(false)
@@ -153,14 +155,22 @@ export function CicloRanking({ ciclos, cicloIdInicial }: Props) {
   }, [])
 
   useEffect(() => {
-    if (cicloId > 0) buscarStats(cicloId)
+    if (cicloId > 0) buscarStats(cicloId, soFinalizados)
     else setCarregando(false)
-  }, [cicloId, buscarStats])
+  }, [cicloId, soFinalizados, buscarStats])
 
   function handleCicloChange(id: number) {
     setCicloId(id)
     const params = new URLSearchParams(searchParams.toString())
     params.set('cicloId', String(id))
+    router.replace(`${pathname}?${params.toString()}`)
+  }
+
+  function handleFiltroFinalizados(ativo: boolean) {
+    setSoFinalizados(ativo)
+    const params = new URLSearchParams(searchParams.toString())
+    if (ativo) params.set('finalizados', '1')
+    else params.delete('finalizados')
     router.replace(`${pathname}?${params.toString()}`)
   }
 
@@ -305,6 +315,23 @@ export function CicloRanking({ ciclos, cicloIdInicial }: Props) {
           </button>
         )}
 
+        {ciclos.length > 0 && (
+          <button
+            onClick={() => handleFiltroFinalizados(!soFinalizados)}
+            title={soFinalizados ? 'Mostrar todos os confrontos' : 'Somente confrontos finalizados'}
+            aria-label="Filtrar confrontos finalizados"
+            aria-pressed={soFinalizados}
+            className="flex items-center justify-center w-10 h-10 rounded-xl transition-colors flex-shrink-0"
+            style={{
+              background: soFinalizados ? 'rgba(245,196,0,0.1)' : '#111111',
+              border: `1px solid ${soFinalizados ? 'rgba(245,196,0,0.4)' : '#242424'}`,
+              color: soFinalizados ? '#f5c400' : '#888888',
+            }}
+          >
+            <Filter size={16} />
+          </button>
+        )}
+
         {cicloEhAtivo && (
           <button
             onClick={() => setConfirmFinalizarOpen(true)}
@@ -316,6 +343,19 @@ export function CicloRanking({ ciclos, cicloIdInicial }: Props) {
           </button>
         )}
       </div>
+
+      {soFinalizados && ciclos.length > 0 && (
+        <div className="print:hidden -mt-3">
+          <button
+            onClick={() => handleFiltroFinalizados(false)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-barlow-condensed text-xs tracking-wide"
+            style={{ background: 'rgba(245,196,0,0.1)', color: '#f5c400', border: '1px solid rgba(245,196,0,0.25)' }}
+          >
+            Só confrontos finalizados
+            <X size={12} />
+          </button>
+        </div>
+      )}
 
       {/* Tabelas */}
       {ciclos.length === 0 ? null : carregando ? (
@@ -363,6 +403,7 @@ export function CicloRanking({ ciclos, cicloIdInicial }: Props) {
             </h1>
             <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
               {formatPeriodo(cicloAtual)}
+              {soFinalizados && ' · Somente confrontos finalizados'}
             </div>
           </div>
           <div style={{ display: 'flex' }}>

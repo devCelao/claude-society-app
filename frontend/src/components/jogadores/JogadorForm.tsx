@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { JogadorSchema, type JogadorInput } from '@/lib/validations/jogador'
-import type { PosicaoResumo } from '@/types'
+import type { Jogador, PosicaoResumo } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -22,9 +22,12 @@ interface Props {
   jogadorId?: number
   defaultValues?: Partial<JogadorInput>
   posicoes: PosicaoResumo[]
+  // Uso embutido (ex.: modal): quando informados, substituem o redirect para /jogadores
+  onSuccess?: (jogador: Jogador) => void
+  onCancel?: () => void
 }
 
-export function JogadorForm({ jogadorId, defaultValues, posicoes }: Props) {
+export function JogadorForm({ jogadorId, defaultValues, posicoes, onSuccess, onCancel }: Props) {
   const router = useRouter()
   const {
     register,
@@ -56,6 +59,10 @@ export function JogadorForm({ jogadorId, defaultValues, posicoes }: Props) {
     }
 
     toast.success(jogadorId ? 'Jogador atualizado' : 'Jogador cadastrado')
+    if (onSuccess) {
+      onSuccess(await res.json())
+      return
+    }
     router.push('/jogadores')
     router.refresh()
   }
@@ -172,7 +179,7 @@ export function JogadorForm({ jogadorId, defaultValues, posicoes }: Props) {
         <Button
           type="button"
           variant="outline"
-          onClick={() => router.push('/jogadores')}
+          onClick={() => (onCancel ? onCancel() : router.push('/jogadores'))}
           disabled={isSubmitting}
         >
           Cancelar

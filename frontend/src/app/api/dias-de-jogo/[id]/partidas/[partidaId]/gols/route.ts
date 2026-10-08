@@ -7,6 +7,8 @@ const GolSchema = z.object({
   jogadorId: z.number().int().positive(),
   timeId: z.number().int().positive(),
   assistenciaJogadorId: z.number().int().positive().nullable().optional(),
+  // Gol contra: jogador do time adversario; ponto vai para timeId
+  golContra: z.boolean().optional().default(false),
 })
 
 async function recalcularVencedor(
@@ -41,7 +43,7 @@ export async function POST(
       return NextResponse.json({ error: 'Dados invalidos', details: result.error.flatten() }, { status: 422 })
     }
 
-    const { jogadorId, timeId, assistenciaJogadorId } = result.data
+    const { jogadorId, timeId, assistenciaJogadorId, golContra } = result.data
 
     const partida = await prisma.partida.findFirst({
       where: { id: pId, diaDeJogoId: diaId },
@@ -68,6 +70,19 @@ export async function POST(
       }
     }
 
+    if (golContra) {
+      if (assistenciaJogadorId) {
+        return NextResponse.json({ error: 'Gol contra nao tem assistencia' }, { status: 400 })
+      }
+      const timeAdversarioId = timeId === partida.timeAId ? partida.timeBId : partida.timeAId
+      const doAdversario = await prisma.jogadorTime.findFirst({
+        where: { timeId: timeAdversarioId, jogadorId },
+      })
+      if (!doAdversario) {
+        return NextResponse.json({ error: 'Gol contra deve ser de um jogador do time adversario' }, { status: 400 })
+      }
+    }
+
     const jogador = await prisma.jogador.findUnique({
       where: { id: jogadorId },
       select: { nome: true },
@@ -85,7 +100,7 @@ export async function POST(
 
     const resultado = await prisma.$transaction(async (tx) => {
       const gol = await tx.gol.create({
-        data: { partidaId: pId, timeId, jogadorId },
+        data: { partidaId: pId, timeId, jogadorId, golContra },
       })
       if (assistenciaJogadorId && assistenciaJogadorId !== jogadorId) {
         await tx.assistencia.create({
@@ -102,6 +117,7 @@ export async function POST(
         timeId,
         jogadorId,
         jogadorNome: jogador.nome,
+        golContra,
         assistenciaJogadorId: assistenciaJogadorId ?? null,
         assistenciaNome,
         ...(resultado.placar ?? {}),

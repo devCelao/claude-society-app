@@ -3,31 +3,24 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Trophy, Play, Pause, RotateCcw, CheckCircle2, XCircle, AlertTriangle, ImageDown, Pencil, X, Check } from 'lucide-react'
+import { Trophy, Play, Pause, RotateCcw, CheckCircle2, XCircle, Flag, AlertTriangle, ImageDown, Pencil, X, Check, ChevronDown } from 'lucide-react'
 import { toBlob } from 'html-to-image'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PartidaAuditoria } from '@/components/partidas/PartidaAuditoria'
+import { getCorTime, COR_NEUTRA } from '@/lib/cores-time'
+import { ImagemTimes, type PosicaoImagem } from '@/components/game-day/ImagemTimes'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
-type CorTime = 'vermelho' | 'azul' | 'verde' | 'laranja'
-
-const COR_HEX: Record<CorTime, string> = {
-  vermelho: '#ef4444', azul: '#3b82f6', verde: '#22c55e', laranja: '#f97316',
-}
-const COR_BG: Record<CorTime, string> = {
-  vermelho: 'rgba(239,68,68,0.12)', azul: 'rgba(59,130,246,0.12)',
-  verde: 'rgba(34,197,94,0.12)', laranja: 'rgba(249,115,22,0.12)',
-}
 
 const DURACAO_MS = 7 * 60 * 1000
 
-type Jogador = { id: number; nome: string; apelido: string | null; convidado: boolean }
+type Jogador = { id: number; nome: string; apelido: string | null; convidado: boolean; posicaoPrimaria?: PosicaoImagem }
 type TimeData = { id: number; nome: string; cor: string; jogadores: Jogador[] }
 type GolData = {
-  id: number; timeId: number; jogadorId: number; jogadorNome: string
+  id: number; timeId: number; jogadorId: number; jogadorNome: string; golContra?: boolean
   assistenciaJogadorId: number | null; assistenciaJogadorNome: string | null
 }
 type PartidaData = {
@@ -85,6 +78,7 @@ function computeStats(partidas: PartidaData[], times: TimeData[], localGols: Gol
   const allGols = [...partidas.flatMap((p) => p.gols), ...localGols]
   const byPlayer: Record<number, { nome: string; gols: number; assists: number }> = {}
   allGols.forEach((g) => {
+    if (g.golContra) return // conta no placar, nao na artilharia
     if (!byPlayer[g.jogadorId]) byPlayer[g.jogadorId] = { nome: g.jogadorNome, gols: 0, assists: 0 }
     byPlayer[g.jogadorId].gols++
     if (g.assistenciaJogadorId) {
@@ -99,7 +93,7 @@ function computeStats(partidas: PartidaData[], times: TimeData[], localGols: Gol
 // ─── TimeCard ─────────────────────────────────────────────────────────────────
 
 function TimeCard({ time }: { time: TimeData }) {
-  const hex = COR_HEX[time.cor as CorTime] ?? '#888'
+  const hex = getCorTime(time.cor).hex
   return (
     <div className="rounded-xl border overflow-hidden" style={{ borderColor: `${hex}40`, background: '#111' }}>
       <div className="px-4 py-3 flex items-center justify-between" style={{ background: `${hex}18`, borderBottom: `1px solid ${hex}30` }}>
@@ -131,47 +125,72 @@ function TimeCard({ time }: { time: TimeData }) {
 function GolModal({ open, onClose, teamName, teamCor, teamPlayers, otherPlayers, onConfirm, saving }: {
   open: boolean; onClose: () => void; teamName: string; teamCor: string
   teamPlayers: Jogador[]; otherPlayers: Jogador[]
-  onConfirm: (jogadorId: number, assistId: number | null) => void; saving: boolean
+  onConfirm: (jogadorId: number, assistId: number | null, golContra: boolean) => void; saving: boolean
 }) {
-  const hex = COR_HEX[teamCor as CorTime] ?? '#888'
+  const { hex, texto } = getCorTime(teamCor)
   const [jogadorId, setJogadorId] = useState('')
   const [assistId, setAssistId] = useState('')
-  useEffect(() => { if (!open) { setJogadorId(''); setAssistId('') } }, [open])
+  const [golContra, setGolContra] = useState(false)
+  useEffect(() => { if (!open) { setJogadorId(''); setAssistId(''); setGolContra(false) } }, [open])
+  // Gol contra: autor e do time adversario (marcou contra o proprio time); sem assistencia
+  const autores = golContra ? otherPlayers : teamPlayers
   const assistPool = teamPlayers.filter((j) => String(j.id) !== jogadorId)
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose() }}>
       <DialogContent style={{ background: '#111111', border: '1px solid #242424' }}>
-        <DialogHeader>
-          <DialogTitle className="font-bebas tracking-widest text-2xl">
-            <span style={{ color: hex }}>GOL!</span>
+        {/* Cabecalho: titulo + "Gol contra" na mesma linha (pr-8 reserva o botao fechar) */}
+        <DialogHeader className="flex-row items-center gap-2 pr-8">
+          <DialogTitle className="font-bebas tracking-widest text-2xl flex-1 min-w-0 truncate">
+            <span style={{ color: golContra ? '#fb923c' : hex }}>{golContra ? 'GOL CONTRA' : 'GOL!'}</span>
             <span className="text-muted-foreground text-base font-barlow-condensed tracking-wide normal-case ml-2">{teamName}</span>
           </DialogTitle>
+          <label
+            className="flex items-center gap-2 h-10 px-2.5 rounded-xl cursor-pointer select-none font-barlow-condensed text-sm flex-shrink-0"
+            style={{
+              background: golContra ? 'rgba(251,146,60,0.1)' : '#1a1a1a',
+              border: `1px solid ${golContra ? 'rgba(251,146,60,0.4)' : '#333'}`,
+              color: golContra ? '#fb923c' : '#f0ede0',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={golContra}
+              onChange={(e) => { setGolContra(e.target.checked); setJogadorId(''); setAssistId('') }}
+              className="w-4 h-4 flex-shrink-0"
+              style={{ accentColor: '#fb923c' }}
+            />
+            Gol contra
+          </label>
         </DialogHeader>
         <div className="space-y-4 pt-1">
           <div className="space-y-1.5">
-            <label className="font-barlow-condensed text-sm text-foreground">Quem marcou?</label>
+            <label className="font-barlow-condensed text-sm text-foreground">
+              Quem marcou?{golContra && <span className="text-xs ml-1" style={{ color: '#fb923c' }}>(jogador adversário)</span>}
+            </label>
             <select value={jogadorId} onChange={(e) => { setJogadorId(e.target.value); setAssistId('') }}
               className="w-full px-3 py-2.5 rounded-xl font-barlow-condensed text-sm focus:outline-none"
               style={{ background: '#1a1a1a', border: '1px solid #333', color: jogadorId ? '#f0ede0' : '#666' }}>
               <option value="">Selecione o jogador</option>
-              {teamPlayers.map((j) => <option key={j.id} value={j.id}>{j.nome}</option>)}
+              {autores.map((j) => <option key={j.id} value={j.id}>{j.nome}</option>)}
             </select>
           </div>
-          <div className="space-y-1.5">
-            <label className="font-barlow-condensed text-sm text-foreground">
-              Assistência <span className="text-muted-foreground text-xs">(opcional)</span>
-            </label>
-            <select value={assistId} onChange={(e) => setAssistId(e.target.value)} disabled={!jogadorId}
-              className="w-full px-3 py-2.5 rounded-xl font-barlow-condensed text-sm focus:outline-none disabled:opacity-40"
-              style={{ background: '#1a1a1a', border: '1px solid #333', color: assistId ? '#f0ede0' : '#666' }}>
-              <option value="">Sem assistência</option>
-              {assistPool.map((j) => <option key={j.id} value={j.id}>{j.nome}</option>)}
-            </select>
-          </div>
+          {!golContra && (
+            <div className="space-y-1.5">
+              <label className="font-barlow-condensed text-sm text-foreground">
+                Assistência <span className="text-muted-foreground text-xs">(opcional)</span>
+              </label>
+              <select value={assistId} onChange={(e) => setAssistId(e.target.value)} disabled={!jogadorId}
+                className="w-full px-3 py-2.5 rounded-xl font-barlow-condensed text-sm focus:outline-none disabled:opacity-40"
+                style={{ background: '#1a1a1a', border: '1px solid #333', color: assistId ? '#f0ede0' : '#666' }}>
+                <option value="">Sem assistência</option>
+                {assistPool.map((j) => <option key={j.id} value={j.id}>{j.nome}</option>)}
+              </select>
+            </div>
+          )}
           <div className="flex gap-2 pt-1">
-            <Button onClick={() => onConfirm(Number(jogadorId), assistId ? Number(assistId) : null)}
+            <Button onClick={() => onConfirm(Number(jogadorId), golContra ? null : (assistId ? Number(assistId) : null), golContra)}
               disabled={!jogadorId || saving} className="flex-1 font-barlow-condensed tracking-wide"
-              style={{ background: hex, color: '#fff', border: 'none' }}>
+              style={{ background: hex, color: texto, border: 'none' }}>
               {saving ? 'Salvando...' : 'Confirmar Gol'}
             </Button>
             <Button variant="outline" onClick={onClose} className="font-barlow-condensed">Cancelar</Button>
@@ -184,11 +203,32 @@ function GolModal({ open, onClose, teamName, teamCor, teamPlayers, otherPlayers,
 
 // ─── Stats do dia ─────────────────────────────────────────────────────────────
 
-function StatsDia({ partidas, times, victories, jogadores }: {
-  partidas: PartidaData[]; times: TimeData[]
+function StatsDia({ diaId, partidas, times, victories, jogadores, onAlterado }: {
+  diaId: number; partidas: PartidaData[]; times: TimeData[]
   victories: Record<number, number>; jogadores: { nome: string; gols: number; assists: number }[]
+  onAlterado: () => void
 }) {
   const finished = partidas.filter((p) => p.status === 'FINALIZADA')
+  // null = acompanha sempre a ultima partida encerrada
+  const [selecionadaId, setSelecionadaId] = useState<number | null>(null)
+  const ultima = finished[finished.length - 1]
+  const selecionada = finished.find((p) => p.id === selecionadaId) ?? ultima
+  const [listaAberta, setListaAberta] = useState(false)
+  // Vencedor na cor do time; perdedor e empate em branco (cor neutra reservada)
+  const descreverPartida = (p: PartidaData) => {
+    const golsA = p.gols.filter((g) => g.timeId === p.timeAId).length
+    const golsB = p.gols.filter((g) => g.timeId === p.timeBId).length
+    const corA = p.vencedorId === p.timeAId ? getCorTime(p.timeACor).hex : COR_NEUTRA
+    const corB = p.vencedorId === p.timeBId ? getCorTime(p.timeBCor).hex : COR_NEUTRA
+    return (
+      <span className="truncate">
+        <span className="text-muted-foreground">P{finished.indexOf(p) + 1} · </span>
+        <span style={{ color: corA }}>{p.timeANome}</span>
+        <span className="font-semibold mx-2" style={{ color: COR_NEUTRA }}>{golsA}<span className="mx-1">×</span>{golsB}</span>
+        <span style={{ color: corB }}>{p.timeBNome}</span>
+      </span>
+    )
+  }
 
   const tempoEmCampoMs: Record<number, number> = {}
   finished.forEach((p) => {
@@ -205,7 +245,7 @@ function StatsDia({ partidas, times, victories, jogadores }: {
       <p className="font-barlow-condensed text-xs tracking-widest uppercase text-muted-foreground">Placar do dia</p>
       <div className="grid grid-cols-3 gap-2">
         {times.map((t) => {
-          const hex = COR_HEX[t.cor as CorTime] ?? '#888'
+          const hex = getCorTime(t.cor).hex
           return (
             <div key={t.id} className="rounded-xl py-3 text-center" style={{ background: '#141414', border: '1px solid #222' }}>
               <div className="font-barlow-condensed text-xs text-muted-foreground capitalize truncate px-2">{t.nome}</div>
@@ -248,26 +288,50 @@ function StatsDia({ partidas, times, victories, jogadores }: {
           </div>
         </div>
       )}
-      {finished.length > 0 && (
-        <div className="space-y-1.5">
-          <div className="font-barlow-condensed text-[10px] tracking-widest uppercase text-muted-foreground">Histórico</div>
-          {finished.map((p, i) => {
-            const golsA = p.gols.filter((g) => g.timeId === p.timeAId).length
-            const golsB = p.gols.filter((g) => g.timeId === p.timeBId).length
-            const hexA = COR_HEX[p.timeACor as CorTime] ?? '#888'
-            const hexB = COR_HEX[p.timeBCor as CorTime] ?? '#888'
-            const vHex = p.vencedorId ? (p.vencedorId === p.timeAId ? hexA : hexB) : '#555'
-            return (
-              <div key={p.id} className="flex items-center gap-2 px-3 py-2 rounded-lg font-barlow-condensed text-xs"
-                style={{ background: '#141414' }}>
-                <span className="text-muted-foreground w-5">P{i + 1}</span>
-                <span style={{ color: hexA }}>{p.timeANome}</span>
-                <span className="font-bebas text-sm tracking-widest">{golsA}×{golsB}</span>
-                <span style={{ color: hexB }}>{p.timeBNome}</span>
-                <span className="ml-auto" style={{ color: vHex }}>{p.vencedorId ? '✓' : 'empate'}</span>
-              </div>
-            )
-          })}
+      {selecionada && (
+        <div className="space-y-2">
+          <div className="font-barlow-condensed text-[10px] tracking-widest uppercase text-muted-foreground">Partidas do dia</div>
+          {/* Lista suspensa propria: o <select> nativo nao permite colorir parte do texto */}
+          <div className="relative">
+            <button
+              onClick={() => setListaAberta((v) => !v)}
+              aria-expanded={listaAberta}
+              className="w-full min-h-11 flex items-center gap-2 px-3 py-2.5 rounded-xl font-barlow-condensed text-sm text-left"
+              style={{ background: '#141414', border: '1px solid #222' }}
+            >
+              <span className="flex-1 min-w-0 flex">{descreverPartida(selecionada)}</span>
+              <ChevronDown size={16} className="flex-shrink-0 text-muted-foreground" />
+            </button>
+            {listaAberta && (
+              <>
+                <div className="fixed inset-0 z-20" onClick={() => setListaAberta(false)} />
+                <div
+                  className="absolute left-0 right-0 top-full mt-1 z-30 rounded-xl border py-1 max-h-72 overflow-y-auto"
+                  style={{ background: '#1a1a1a', borderColor: '#333' }}
+                >
+                  {[...finished].reverse().map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => {
+                        setSelecionadaId(p.id === ultima.id ? null : p.id)
+                        setListaAberta(false)
+                      }}
+                      className="w-full min-h-11 flex items-center px-3 font-barlow-condensed text-sm text-left hover:bg-white/5"
+                      style={{ background: p.id === selecionada.id ? 'rgba(245,196,0,0.08)' : 'transparent' }}
+                    >
+                      {descreverPartida(p)}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+          {selecionada.id !== ultima.id && (
+            <p className="font-barlow-condensed text-[11px] text-muted-foreground px-1">
+              Alterar o resultado desta partida não muda as partidas seguintes.
+            </p>
+          )}
+          <PartidaAuditoria key={selecionada.id} diaId={diaId} partida={{ id: selecionada.id }} times={times} onAlterado={onAlterado} />
         </div>
       )}
     </div>
@@ -298,7 +362,7 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
     await esperarLayoutEstabilizar(node)
     const blob = await toBlob(node, {
       pixelRatio: 2,
-      backgroundColor: '#ffffff',
+      backgroundColor: '#0a0a0a',
       width: node.scrollWidth,
       height: node.scrollHeight,
     })
@@ -361,7 +425,7 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
   const [savingGol, setSavingGol] = useState(false)
   const [busy, setBusy] = useState(false)
   const [confirmAnular, setConfirmAnular] = useState(false)
-  const [mostrarEdicaoUltimaPartida, setMostrarEdicaoUltimaPartida] = useState(false)
+  const [confirmEncerrar, setConfirmEncerrar] = useState(false)
   const [editAssistGolId, setEditAssistGolId] = useState<number | null>(null)
   const [assistValue, setAssistValue] = useState('')
   const [golBusy, setGolBusy] = useState(false)
@@ -479,7 +543,7 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
     } finally { setBusy(false) }
   }
 
-  async function handleGolConfirm(jogadorId: number, assistId: number | null) {
+  async function handleGolConfirm(jogadorId: number, assistId: number | null, golContra: boolean) {
     if (phase.type !== 'jogando' || !golDialog) return
     const timeId = golDialog.equipe === 'A' ? phase.timeAId : phase.timeBId
     setSavingGol(true)
@@ -487,16 +551,18 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
       const res = await fetch(`/api/dias-de-jogo/${diaId}/partidas/${phase.partidaId}/gols`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jogadorId, timeId, assistenciaJogadorId: assistId }),
+        body: JSON.stringify({ jogadorId, timeId, assistenciaJogadorId: assistId, golContra }),
       })
       if (!res.ok) { toast.error((await res.json()).error ?? 'Erro ao marcar gol'); return }
       const body = await res.json()
       setLocalGols((prev) => [...prev, {
-        id: body.id, timeId, jogadorId, jogadorNome: body.jogadorNome,
+        id: body.id, timeId, jogadorId, jogadorNome: body.jogadorNome, golContra,
         assistenciaJogadorId: assistId, assistenciaJogadorNome: body.assistenciaNome ?? null,
       }])
       setGolDialog(null)
-      toast.success(`Gol de ${body.jogadorNome}!${body.assistenciaNome ? ` Assist.: ${body.assistenciaNome}` : ''}`)
+      toast.success(golContra
+        ? `Gol contra de ${body.jogadorNome}`
+        : `Gol de ${body.jogadorNome}!${body.assistenciaNome ? ` Assist.: ${body.assistenciaNome}` : ''}`)
     } finally { setSavingGol(false) }
   }
 
@@ -558,7 +624,7 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
       if (!res.ok) { toast.error((await res.json()).error ?? 'Erro'); return }
       toast.success('Dia de jogo encerrado')
       router.push('/dias-de-jogo')
-    } finally { setBusy(false) }
+    } finally { setBusy(false); setConfirmEncerrar(false) }
   }
 
   async function handleAnular() {
@@ -602,6 +668,37 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
 
   return (
     <div className="space-y-5">
+
+      {/* ── Cabeçalho + ações do confronto (encerrar/anular pedem confirmação) ── */}
+      <div className="flex items-start gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="w-8 h-[3px] rounded-sm mb-2" style={{ background: '#f5c400' }} />
+          <h1 className="font-bebas text-5xl md:text-6xl tracking-widest leading-none text-foreground">
+            AO VIVO
+          </h1>
+          {cicloNome && (
+            <p className="font-barlow-condensed text-sm text-muted-foreground mt-1.5 tracking-wide">
+              Ciclo: <span style={{ color: '#f5c400', fontWeight: 600 }}>{cicloNome}</span>
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-2 pt-3 flex-shrink-0">
+          {partidas.length > 0 && (
+            <button onClick={() => setConfirmEncerrar(true)} disabled={busy}
+              aria-label="Encerrar confronto" title="Encerrar confronto"
+              className="w-11 h-11 rounded-xl flex items-center justify-center transition-colors disabled:opacity-40"
+              style={{ background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>
+              <Flag size={18} />
+            </button>
+          )}
+          <button onClick={() => setConfirmAnular(true)} disabled={busy}
+            aria-label="Anular confronto" title="Anular confronto"
+            className="w-11 h-11 rounded-xl flex items-center justify-center border transition-colors disabled:opacity-40"
+            style={{ borderColor: '#333', color: '#777', background: 'transparent' }}>
+            <XCircle size={18} />
+          </button>
+        </div>
+      </div>
 
       {/* ── Tempo em campo / Tempo desde o início ── */}
       {partidas.length > 0 && (
@@ -652,36 +749,7 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
             className={gerandoImagem ? 'block' : 'hidden'}
             style={gerandoImagem ? { position: 'fixed', top: 0, left: -9999 } : undefined}
           >
-            <div ref={capturaRef} style={{ fontFamily: 'sans-serif', color: '#000', background: '#fff', padding: 16, width: 720 }}>
-              <div style={{ marginBottom: 20, borderBottom: '3px solid #f5c400', paddingBottom: 10 }}>
-                <h1 style={{ fontSize: 24, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 2, margin: 0 }}>
-                  Times do dia
-                </h1>
-                <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
-                  {cicloNome && <span>{cicloNome} · </span>}
-                  Gerado em {new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                  {' às '}
-                  {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                </div>
-              </div>
-              <div style={{ display: 'flex' }}>
-                {times.map((t) => {
-                  const hex = COR_HEX[t.cor as CorTime] ?? '#888'
-                  return (
-                    <div key={t.id} style={{ width: 213, marginRight: 16, borderLeft: `3px solid ${hex}`, paddingLeft: 10 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', color: hex, marginBottom: 6, letterSpacing: 1 }}>
-                        {t.nome}
-                      </div>
-                      {t.jogadores.map((j) => (
-                        <div key={j.id} style={{ fontSize: 12, paddingBottom: 3 }}>
-                          {j.nome}{j.convidado ? ' (G)' : ''}
-                        </div>
-                      ))}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
+            <ImagemTimes ref={capturaRef} times={times} data={data} cicloNome={cicloNome} />
           </div>
 
           <div className="space-y-3">
@@ -690,24 +758,12 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
               style={{ background: '#f5c400', color: '#000' }}>
               INICIAR JOGO
             </button>
-            <div className="flex gap-2">
-              <button onClick={handleCopiarImagem} disabled={gerandoImagem}
-                className="flex-1 py-2.5 rounded-xl font-barlow-condensed text-sm tracking-wide disabled:opacity-40"
-                style={{ background: 'rgba(245,196,0,0.1)', color: '#f5c400', border: '1px solid rgba(245,196,0,0.25)' }}>
-                <ImageDown size={14} className={`inline mr-1.5 ${gerandoImagem ? 'animate-pulse' : ''}`} />
-                {gerandoImagem ? 'Gerando...' : 'Copiar imagem'}
-              </button>
-              <button onClick={handleEncerrarDia} disabled={busy}
-                className="flex-1 py-2.5 rounded-xl font-barlow-condensed text-sm tracking-wide"
-                style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>
-                <CheckCircle2 size={14} className="inline mr-1.5" />Encerrar Dia
-              </button>
-              <button onClick={() => setConfirmAnular(true)} disabled={busy}
-                className="px-5 py-2.5 rounded-xl font-barlow-condensed text-sm tracking-wide border"
-                style={{ borderColor: '#333', color: '#666', background: 'transparent' }}>
-                <XCircle size={14} className="inline mr-1.5" />Anular
-              </button>
-            </div>
+            <button onClick={handleCopiarImagem} disabled={gerandoImagem}
+              className="w-full py-2.5 rounded-xl font-barlow-condensed text-sm tracking-wide disabled:opacity-40"
+              style={{ background: 'rgba(245,196,0,0.1)', color: '#f5c400', border: '1px solid rgba(245,196,0,0.25)' }}>
+              <ImageDown size={14} className={`inline mr-1.5 ${gerandoImagem ? 'animate-pulse' : ''}`} />
+              {gerandoImagem ? 'Gerando...' : 'Copiar imagem'}
+            </button>
           </div>
         </>
       )}
@@ -728,10 +784,10 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
         const timeA = getTime(phase.timeAId)
         const timeB = getTime(phase.timeBId)
         const timeEspera = getTime(phase.waitingTeamId)
-        const hexA = COR_HEX[timeA.cor as CorTime] ?? '#888'
-        const hexB = COR_HEX[timeB.cor as CorTime] ?? '#888'
-        const bgA = COR_BG[timeA.cor as CorTime] ?? 'rgba(128,128,128,0.12)'
-        const bgB = COR_BG[timeB.cor as CorTime] ?? 'rgba(128,128,128,0.12)'
+        const hexA = getCorTime(timeA.cor).hex
+        const hexB = getCorTime(timeB.cor).hex
+        const bgA = getCorTime(timeA.cor).bg
+        const bgB = getCorTime(timeB.cor).bg
 
         return (
           <div className="rounded-xl border overflow-hidden" style={{ borderColor: '#242424', background: '#111' }}>
@@ -746,7 +802,7 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
               </div>
               {timeEspera && (
                 <span className="font-barlow-condensed text-xs text-muted-foreground flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full" style={{ background: COR_HEX[timeEspera.cor as CorTime] ?? '#888' }} />
+                  <div className="w-2 h-2 rounded-full" style={{ background: getCorTime(timeEspera.cor).hex }} />
                   {timeEspera.nome} aguarda
                 </span>
               )}
@@ -842,11 +898,14 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
                       <div key={g.id} className="space-y-1">
                         <div className="flex items-center gap-2 font-barlow-condensed text-xs">
                           <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: hex }} />
-                          <span className="flex-1" style={{ color: hex }}>{g.jogadorNome}</span>
+                          <span className="flex-1" style={{ color: hex }}>
+                            {g.jogadorNome}
+                            {g.golContra && <span className="ml-1.5 text-[10px] tracking-wide" style={{ color: '#fb923c' }}>(contra)</span>}
+                          </span>
                           {g.assistenciaJogadorNome && !isEditando && (
                             <span className="text-muted-foreground">→ {g.assistenciaJogadorNome}</span>
                           )}
-                          <button
+                          {!g.golContra && <button
                             onClick={() => {
                               setEditAssistGolId(isEditando ? null : g.id)
                               setAssistValue(g.assistenciaJogadorId ? String(g.assistenciaJogadorId) : '')
@@ -857,7 +916,7 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
                             style={{ color: g.assistenciaJogadorNome ? '#3b82f6' : '#444' }}
                           >
                             <Pencil size={11} />
-                          </button>
+                          </button>}
                           <button
                             onClick={() => handleDeleteGolLive(g.id)}
                             disabled={golBusy}
@@ -930,9 +989,9 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
         const vencedor = getTime(phase.vencedorId)
         const perdedor = getTime(phase.perdedorId)
         const proximo = getTime(phase.prevWaitingId)
-        const hexV = COR_HEX[vencedor.cor as CorTime] ?? '#888'
-        const hexP = COR_HEX[perdedor.cor as CorTime] ?? '#888'
-        const hexPr = COR_HEX[proximo.cor as CorTime] ?? '#888'
+        const hexV = getCorTime(vencedor.cor).hex
+        const hexP = getCorTime(perdedor.cor).hex
+        const hexPr = getCorTime(proximo.cor).hex
         return (
           <div className="rounded-xl border p-5 space-y-4" style={{ borderColor: '#242424', background: '#111' }}>
             <div>
@@ -961,18 +1020,11 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
                 <div className="w-1.5 h-1.5 rounded-full" style={{ background: hexP }} />{perdedor.nome} aguarda
               </div>
             </div>
-            <div className="flex gap-2">
-              <button onClick={() => handleConfirmarPartida(phase.vencedorId, phase.prevWaitingId)} disabled={busy}
-                className="flex-1 py-3 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide disabled:opacity-40"
-                style={{ background: '#f5c400', color: '#000' }}>
-                {busy ? 'Criando...' : 'Iniciar Próxima Partida'}
-              </button>
-              <button onClick={handleEncerrarDia} disabled={busy}
-                className="px-4 py-3 rounded-xl font-barlow-condensed text-sm tracking-wide"
-                style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>
-                Encerrar Dia
-              </button>
-            </div>
+            <button onClick={() => handleConfirmarPartida(phase.vencedorId, phase.prevWaitingId)} disabled={busy}
+              className="w-full py-3 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide disabled:opacity-40"
+              style={{ background: '#f5c400', color: '#000' }}>
+              {busy ? 'Criando...' : 'Iniciar Próxima Partida'}
+            </button>
           </div>
         )
       })()}
@@ -988,12 +1040,12 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
               <div className="font-bebas tracking-widest text-2xl" style={{ color: '#f5c400' }}>EMPATE!</div>
               <p className="font-barlow-condensed text-sm text-muted-foreground mt-1">
                 Quem fica na quadra para enfrentar o{' '}
-                <span style={{ color: COR_HEX[timeEspera.cor as CorTime] ?? '#888' }}>{timeEspera.nome}</span>?
+                <span style={{ color: getCorTime(timeEspera.cor).hex }}>{timeEspera.nome}</span>?
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               {[timeA, timeB].map((t) => {
-                const hex = COR_HEX[t.cor as CorTime] ?? '#888'
+                const hex = getCorTime(t.cor).hex
                 return (
                   <button key={t.id} onClick={() => handleConfirmarPartida(t.id, phase.prevWaitingId)} disabled={busy}
                     className="py-4 rounded-xl font-barlow-condensed text-sm font-bold tracking-wide disabled:opacity-40"
@@ -1007,45 +1059,10 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
         )
       })()}
 
-      {/* ── Editar gols da última partida (disponível assim que ela finaliza) ── */}
-      {lastStatus === 'FINALIZADA' && (
-        <div className="space-y-2">
-          <button
-            onClick={() => {
-              if (mostrarEdicaoUltimaPartida) router.refresh()
-              setMostrarEdicaoUltimaPartida((v) => !v)
-            }}
-            className="flex items-center gap-1.5 font-barlow-condensed text-xs tracking-wide transition-colors"
-            style={{ color: mostrarEdicaoUltimaPartida ? '#f5c400' : '#666' }}
-          >
-            <Pencil size={12} />
-            {mostrarEdicaoUltimaPartida ? 'Fechar edição' : 'Editar gols da última partida'}
-          </button>
-          {mostrarEdicaoUltimaPartida && (
-            <PartidaAuditoria diaId={diaId} partida={{ id: lastId }} times={times} />
-          )}
-        </div>
-      )}
-
       {/* ── Stats ── */}
       {partidas.length > 0 && (
-        <StatsDia partidas={partidas} times={times} victories={stats.victories} jogadores={stats.jogadores} />
-      )}
-
-      {/* ── Ações globais na fase jogando ── */}
-      {phase.type === 'jogando' && (
-        <div className="flex gap-2">
-          <button onClick={handleEncerrarDia} disabled={busy}
-            className="flex-1 py-2.5 rounded-xl font-barlow-condensed text-xs tracking-wide"
-            style={{ background: 'rgba(34,197,94,0.08)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.2)' }}>
-            Encerrar confronto
-          </button>
-          <button onClick={() => setConfirmAnular(true)} disabled={busy}
-            className="px-4 py-2.5 rounded-xl font-barlow-condensed text-xs tracking-wide border"
-            style={{ borderColor: '#2a2a2a', color: '#555', background: 'transparent' }}>
-            Anular confronto
-          </button>
-        </div>
+        <StatsDia diaId={diaId} partidas={partidas} times={times} victories={stats.victories} jogadores={stats.jogadores}
+          onAlterado={() => router.refresh()} />
       )}
 
       {/* ── GolModal ── */}
@@ -1060,6 +1077,36 @@ export function AoVivo({ diaId, data, cicloNome, times, partidas }: Props) {
             onConfirm={handleGolConfirm} saving={savingGol} />
         )
       })()}
+
+      {/* ── Confirmar Encerrar ── */}
+      <Dialog open={confirmEncerrar} onOpenChange={setConfirmEncerrar}>
+        <DialogContent style={{ background: '#111111', border: '1px solid #242424' }}>
+          <DialogHeader>
+            <DialogTitle className="font-bebas tracking-widest text-2xl flex items-center gap-2">
+              <CheckCircle2 size={20} style={{ color: '#22c55e' }} />
+              Encerrar confronto
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-1">
+            <p className="font-barlow-condensed text-sm leading-relaxed" style={{ color: '#f0ede0' }}>
+              {partidas.filter((p) => p.status === 'FINALIZADA').length} partida(s) finalizada(s) neste confronto.
+              O dia será encerrado e os resultados entram no ranking.
+            </p>
+            {phase.type === 'jogando' && (
+              <p className="font-barlow-condensed text-sm leading-relaxed" style={{ color: '#fb923c' }}>
+                A partida em andamento será encerrada sem vencedor.
+              </p>
+            )}
+            <div className="flex gap-2">
+              <Button onClick={handleEncerrarDia} disabled={busy} className="font-barlow-condensed tracking-wide"
+                style={{ background: '#22c55e', color: '#000' }}>
+                {busy ? 'Encerrando...' : 'Sim, encerrar'}
+              </Button>
+              <Button variant="outline" onClick={() => setConfirmEncerrar(false)} className="font-barlow-condensed">Cancelar</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Confirmar Anular ── */}
       <Dialog open={confirmAnular} onOpenChange={setConfirmAnular}>
@@ -1101,7 +1148,7 @@ function TimeSelector({ label, selectedId, disabledId, times, onChange }: {
       <div className="font-barlow-condensed text-xs tracking-widest uppercase text-muted-foreground">{label}</div>
       <div className="grid grid-cols-3 gap-2">
         {times.map((t) => {
-          const hex = COR_HEX[t.cor as CorTime] ?? '#888'
+          const hex = getCorTime(t.cor).hex
           const selected = String(t.id) === selectedId
           const disabled = String(t.id) === disabledId
           return (
@@ -1156,8 +1203,8 @@ function SelecaoPartida({ times, isFirst, onConfirmar, onCancelar, busy }: {
 
       {waiting && (
         <div className="flex items-center gap-2 font-barlow-condensed text-xs text-muted-foreground">
-          <div className="w-2 h-2 rounded-full" style={{ background: COR_HEX[waiting.cor as CorTime] ?? '#888' }} />
-          <span><strong style={{ color: COR_HEX[waiting.cor as CorTime] ?? '#888' }}>{waiting.nome}</strong> aguarda</span>
+          <div className="w-2 h-2 rounded-full" style={{ background: getCorTime(waiting.cor).hex }} />
+          <span><strong style={{ color: getCorTime(waiting.cor).hex }}>{waiting.nome}</strong> aguarda</span>
         </div>
       )}
 

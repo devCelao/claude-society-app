@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 
 export type JogadorLista = { id: number; nome: string; apelido: string | null; convidado: boolean }
-export type CorTime = 'vermelho' | 'azul' | 'verde' | 'laranja'
+export type { CorTime } from '@/lib/cores-time'
+import type { CorTime } from '@/lib/cores-time'
 export type TimeFormado = { id: number; nome: string; cor: CorTime; jogadores: JogadorLista[] }
 
 export type DiaDeJogoDetalhe = {
@@ -191,6 +192,15 @@ export async function PATCH(
     // Atualização genérica de status
     if (body.status) {
       if (body.status === 'FINALIZADO') {
+        // Regra de negocio: nao faz sentido encerrar um confronto sem nenhuma partida
+        const totalPartidas = await prisma.partida.count({ where: { diaDeJogoId: diaId } })
+        if (totalPartidas === 0) {
+          return NextResponse.json(
+            { error: 'Não é possível encerrar um confronto sem partidas. Use "Anular" para descartá-lo.' },
+            { status: 400 }
+          )
+        }
+
         // Garante consistência: encerra todas as partidas que não foram finalizadas
         await prisma.partida.updateMany({
           where: { diaDeJogoId: diaId, status: { not: 'FINALIZADA' } },

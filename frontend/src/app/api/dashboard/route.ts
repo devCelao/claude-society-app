@@ -1,4 +1,5 @@
-export type CorTime = 'vermelho' | 'azul' | 'verde' | 'laranja'
+export type { CorTime } from '@/lib/cores-time'
+import type { CorTime } from '@/lib/cores-time'
 
 export type JogadorResumo = { id: number; nome: string }
 

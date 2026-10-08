@@ -4,15 +4,8 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { Shuffle, ChevronDown, ArrowLeft, Plus, Minus, X } from 'lucide-react'
 import type { Jogador, TimeFormado } from './DiaDeJogoFlow'
+import { CORES_TIME, getCorTime, type CorTime } from '@/lib/cores-time'
 
-type CorTime = 'vermelho' | 'azul' | 'verde' | 'laranja'
-
-const CORES: { valor: CorTime; label: string; hex: string }[] = [
-  { valor: 'vermelho', label: 'Vermelho', hex: '#ef4444' },
-  { valor: 'azul',     label: 'Azul',     hex: '#3b82f6' },
-  { valor: 'verde',    label: 'Verde',     hex: '#22c55e' },
-  { valor: 'laranja',  label: 'Laranja',   hex: '#f97316' },
-]
 
 const DEFAULT_CORES: CorTime[] = ['vermelho', 'azul', 'verde']
 
@@ -41,10 +34,6 @@ function distribuir(jogadores: Jogador[]): [Jogador[], Jogador[], Jogador[]] {
   return [s.slice(0, t1), s.slice(t1, t1 + t2), s.slice(t1 + t2)]
 }
 
-function getCor(valor: CorTime) {
-  return CORES.find((c) => c.valor === valor)!
-}
-
 function timesFromIniciais(iniciais: TimeFormado[], padroes: CorTime[]): TimeState[] {
   if (iniciais.length === 3) {
     return iniciais.map((t) => ({ nome: t.nome, cor: t.cor as CorTime, jogadores: t.jogadores }))
@@ -59,6 +48,8 @@ function timesFromIniciais(iniciais: TimeFormado[], padroes: CorTime[]): TimeSta
 export function MontarTimes({ diaId, data, jogadoresSelecionados, timesIniciais, onFechar, onVoltar }: Props) {
   const [times, setTimes] = useState<TimeState[]>(() => timesFromIniciais(timesIniciais, DEFAULT_CORES))
   const [adicionandoAoTime, setAdicionandoAoTime] = useState<number | null>(null)
+  // Seletor de cor aberto por toque/clique (hover/focus nao funciona de forma confiavel no mobile)
+  const [corAbertaIdx, setCorAbertaIdx] = useState<number | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [sincronizando, setSincronizando] = useState(false)
 
@@ -215,19 +206,21 @@ export function MontarTimes({ diaId, data, jogadoresSelecionados, timesIniciais,
       {/* 3 times */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {times.map((time, tIdx) => {
-          const cor = getCor(time.cor)
-          const coresDisponiveis = CORES.filter((c) => c.valor === time.cor || !coresUsadas.includes(c.valor))
+          const cor = getCorTime(time.cor)
+          const coresDisponiveis = CORES_TIME.filter(
+            (c) => c.valor === time.cor || (c.selecionavel !== false && !coresUsadas.includes(c.valor))
+          )
           const mostrandoAdd = adicionandoAoTime === tIdx
 
           return (
             <div
               key={tIdx}
-              className="rounded-xl border overflow-hidden"
+              className="rounded-xl border"
               style={{ borderColor: mostrandoAdd ? `${cor.hex}80` : `${cor.hex}40`, background: '#111111' }}
             >
               {/* Header */}
               <div
-                className="px-3 py-2.5 flex items-center gap-2"
+                className="px-3 py-2.5 flex items-center gap-2 rounded-t-xl"
                 style={{ background: `${cor.hex}18`, borderBottom: `1px solid ${cor.hex}30` }}
               >
                 <span className="font-bebas tracking-widest text-lg flex-1" style={{ color: cor.hex }}>
@@ -235,27 +228,37 @@ export function MontarTimes({ diaId, data, jogadoresSelecionados, timesIniciais,
                 </span>
 
                 {/* Seletor de cor */}
-                <div className="relative group">
-                  <button className="flex items-center gap-1.5 font-barlow-condensed text-xs tracking-wide rounded-lg px-2 py-1 hover:bg-black/20">
+                <div className="relative">
+                  <button
+                    onClick={() => setCorAbertaIdx(corAbertaIdx === tIdx ? null : tIdx)}
+                    aria-expanded={corAbertaIdx === tIdx}
+                    className="flex items-center gap-1.5 font-barlow-condensed text-xs tracking-wide rounded-lg px-2 py-2 hover:bg-black/20"
+                  >
                     <div className="w-3 h-3 rounded-full" style={{ background: cor.hex }} />
                     <span style={{ color: cor.hex }}>{cor.label}</span>
                     <ChevronDown size={11} style={{ color: cor.hex }} />
                   </button>
-                  <div
-                    className="absolute right-0 top-full mt-1 rounded-lg border py-1 z-10 hidden group-focus-within:block group-hover:block"
-                    style={{ background: '#1a1a1a', borderColor: '#333', minWidth: '120px' }}
-                  >
-                    {coresDisponiveis.map((c) => (
-                      <button
-                        key={c.valor}
-                        onClick={() => setCor(tIdx, c.valor)}
-                        className="flex items-center gap-2 w-full px-3 py-1.5 font-barlow-condensed text-xs tracking-wide hover:bg-white/5 text-left"
+                  {corAbertaIdx === tIdx && (
+                    <>
+                      {/* Backdrop invisivel: toque fora fecha o seletor */}
+                      <div className="fixed inset-0 z-20" onClick={() => setCorAbertaIdx(null)} />
+                      <div
+                        className="absolute right-0 top-full mt-1 rounded-lg border py-1 z-30"
+                        style={{ background: '#1a1a1a', borderColor: '#333', minWidth: '120px' }}
                       >
-                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: c.hex }} />
-                        {c.label}
-                      </button>
-                    ))}
-                  </div>
+                        {coresDisponiveis.map((c) => (
+                          <button
+                            key={c.valor}
+                            onClick={() => { setCor(tIdx, c.valor); setCorAbertaIdx(null) }}
+                            className="flex items-center gap-2 w-full px-3 py-2 font-barlow-condensed text-xs tracking-wide hover:bg-white/5 text-left"
+                          >
+                            <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: c.hex }} />
+                            {c.label}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Botão + */}
@@ -264,7 +267,7 @@ export function MontarTimes({ diaId, data, jogadoresSelecionados, timesIniciais,
                   className="w-7 h-7 rounded-full flex items-center justify-center transition-all flex-shrink-0"
                   style={{
                     border: `2px solid ${cor.hex}`,
-                    color: mostrandoAdd ? '#000' : cor.hex,
+                    color: mostrandoAdd ? cor.texto : cor.hex,
                     background: mostrandoAdd ? cor.hex : 'transparent',
                   }}
                   title={mostrandoAdd ? 'Fechar' : 'Adicionar jogador'}
