@@ -309,6 +309,33 @@ LIMIT 10;
 
 ---
 
+## Ajuste de Ciclos (vinculo manual de confrontos)
+
+O ciclo agrupa confrontos para o ranking. O vinculo fica em `dias_de_jogo.ciclo_id`,
+gravado quando o confronto e **iniciado** (`POST /api/dias-de-jogo/[id]/iniciar`): o confronto
+entra no **ciclo atual** (`fim_em = NULL`); se nao houver, um ciclo novo e criado.
+A unidade e o confronto inteiro — partidas acompanham o seu dia de jogo.
+
+A engrenagem em `/ciclos` (`components/ciclos/AjustarCicloDialog.tsx`) edita o ciclo selecionado:
+renomeia e lista os confrontos dele para mover os escolhidos a outro ciclo (existente ou criado
+na hora — o ciclo novo nasce encerrado). Gravacao em `POST /api/ciclos/ajustar`
+(`confirmar: false` = previa, executando a mesma transacao e desfazendo; `true` = aplica).
+Lista de confrontos: `GET /api/ciclos/[id]/confrontos`.
+"Marcar como atual" e acao separada, com confirmacao propria: `POST /api/ciclos/[id]/atual`.
+
+| # | Regra |
+|---|-------|
+| 1 | Datas do ciclo sao **calculadas**: inicio = primeiro confronto, fim = ultimo (`lib/ciclos/periodo.ts`) |
+| 2 | Ciclo sem confrontos mantem as datas que tinha |
+| 3 | So um ciclo atual (`fim_em = NULL`); ao trocar, o anterior e encerrado no ultimo confronto |
+| 4 | So se movem confrontos do ciclo editado, e o destino deve ser outro ciclo |
+| 5 | Ciclo que fica sem confrontos so e excluido se o usuario confirmar (e nunca o ciclo atual) |
+| 6 | "Finalizar ciclo" encerra o ciclo atual com fim = ultimo confronto |
+
+Nao ha mudanca de schema: `inicio_em`/`fim_em` continuam gravados, sempre derivados dos confrontos.
+
+---
+
 ## Configuracao MySQL (Docker)
 
 ```yaml

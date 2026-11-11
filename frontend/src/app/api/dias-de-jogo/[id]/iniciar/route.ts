@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { nomeDoCiclo } from '@/lib/validations/ciclo'
+import { recalcularPeriodo } from '@/lib/ciclos/periodo'
 
 export async function POST(
   _request: Request,
@@ -38,14 +39,18 @@ export async function POST(
       })
     })
 
-    await prisma.diaDeJogo.update({
-      where: { id: diaId },
-      data: {
-        data: hoje,
-        cicloId: ciclo.id,
-        status: 'EM_ANDAMENTO',
-        passo: 'principal',
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.diaDeJogo.update({
+        where: { id: diaId },
+        data: {
+          data: hoje,
+          cicloId: ciclo.id,
+          status: 'EM_ANDAMENTO',
+          passo: 'principal',
+        },
+      })
+      // Inicio do ciclo = data do primeiro confronto
+      await recalcularPeriodo(tx, ciclo.id)
     })
 
     return NextResponse.json({

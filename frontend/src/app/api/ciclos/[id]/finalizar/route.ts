@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { encerrarCiclo } from '@/lib/ciclos/periodo'
 
 export async function POST(
   _request: Request,
@@ -15,12 +16,10 @@ export async function POST(
       return NextResponse.json({ error: 'Ciclo ja esta finalizado' }, { status: 400 })
     }
 
-    const hoje = new Date()
-    hoje.setHours(12, 0, 0, 0)
-
-    const atualizado = await prisma.ciclo.update({
-      where: { id: cicloId },
-      data: { fimEm: hoje },
+    // Fim = data do ultimo confronto do ciclo (datas sao derivadas dos confrontos)
+    const atualizado = await prisma.$transaction(async (tx) => {
+      await encerrarCiclo(tx, cicloId)
+      return tx.ciclo.findUniqueOrThrow({ where: { id: cicloId } })
     })
 
     return NextResponse.json({

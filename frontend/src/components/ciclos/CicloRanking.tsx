@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { ImageDown, FlagTriangleRight, Filter, X } from 'lucide-react'
+import { ImageDown, FlagTriangleRight, Filter, X, Settings } from 'lucide-react'
 import { toast } from 'sonner'
 import { toBlob } from 'html-to-image'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import type { StatJogador, CicloStats } from '@/app/api/ciclos/[id]/route'
+import { AjustarCicloDialog } from '@/components/ciclos/AjustarCicloDialog'
 
 type CicloResumo = { id: number; nome: string; inicioEm: string; fimEm: string | null }
 
@@ -77,17 +78,20 @@ function TabelaRanking({
   )
 }
 
+// 'YYYY-MM-DD' puro e lido como UTC meia-noite — no fuso do Brasil viraria o dia anterior
+const lerData = (data: string) => new Date(`${data}T12:00:00`)
+
 function formatMesAno(ciclo: CicloResumo): string {
-  const inicio = new Date(ciclo.inicioEm)
+  const inicio = lerData(ciclo.inicioEm)
   const mes = String(inicio.getMonth() + 1).padStart(2, '0')
   const ano = inicio.getFullYear()
   return `${mes}/${ano}`
 }
 
 function formatPeriodo(ciclo: CicloResumo): string {
-  const inicio = new Date(ciclo.inicioEm).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const inicio = lerData(ciclo.inicioEm).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
   const fim = ciclo.fimEm
-    ? new Date(ciclo.fimEm).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    ? lerData(ciclo.fimEm).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
     : 'em andamento'
   return `${inicio} – ${fim}`
 }
@@ -139,7 +143,12 @@ export function CicloRanking({ ciclos, cicloIdInicial }: Props) {
   const [confirmFinalizarOpen, setConfirmFinalizarOpen] = useState(false)
   const [finalizando, setFinalizando] = useState(false)
   const [gerandoImagem, setGerandoImagem] = useState(false)
+  const [ajustarOpen, setAjustarOpen] = useState(false)
   const capturaRef = useRef<HTMLDivElement>(null)
+
+  // Ciclos do mesmo mes (ex.: criado pelo ajuste) se diferenciam pelo nome no seletor
+  const contagemMesAno = new Map<string, number>()
+  ciclos.forEach((c) => contagemMesAno.set(formatMesAno(c), (contagemMesAno.get(formatMesAno(c)) ?? 0) + 1))
 
   const cicloAtual = ciclos.find((c) => c.id === cicloId)
   const cicloEhAtivo = cicloAtual?.fimEm === null
@@ -291,7 +300,9 @@ export function CicloRanking({ ciclos, cicloIdInicial }: Props) {
           >
             {ciclos.map((c) => (
               <option key={c.id} value={c.id}>
-                {formatMesAno(c)} {c.fimEm === null ? '- [ATIVO]' : ''}
+                {formatMesAno(c)}
+                {(contagemMesAno.get(formatMesAno(c)) ?? 0) > 1 ? ` · ${c.nome}` : ''}
+                {c.fimEm === null ? ' - [ATIVO]' : ''}
               </option>
             ))}
           </select>
@@ -331,6 +342,18 @@ export function CicloRanking({ ciclos, cicloIdInicial }: Props) {
             <Filter size={16} />
           </button>
         )}
+
+        <button
+          onClick={() => setAjustarOpen(true)}
+          title="Ajustar ciclos"
+          aria-label="Ajustar ciclos"
+          className="flex items-center justify-center w-10 h-10 rounded-xl transition-colors flex-shrink-0"
+          style={{ background: '#111111', border: '1px solid #242424', color: '#888888' }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = '#f5c400'; e.currentTarget.style.borderColor = 'rgba(245,196,0,0.3)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = '#888888'; e.currentTarget.style.borderColor = '#242424' }}
+        >
+          <Settings size={16} />
+        </button>
 
         {cicloEhAtivo && (
           <button
@@ -420,6 +443,19 @@ export function CicloRanking({ ciclos, cicloIdInicial }: Props) {
           </div>
         </div>
       )}
+
+      <AjustarCicloDialog
+        open={ajustarOpen}
+        onOpenChange={setAjustarOpen}
+        cicloSelecionado={cicloAtual}
+        ciclos={ciclos}
+        onConcluido={(id) => {
+          // Mesmo ciclo: o effect nao dispara, entao recarrega as stats (o periodo mudou)
+          if (id === cicloId) buscarStats(id, soFinalizados)
+          else handleCicloChange(id)
+          router.refresh()
+        }}
+      />
 
       {/* Modal: confirmar finalização do ciclo ativo (screen only) */}
       <Dialog open={confirmFinalizarOpen} onOpenChange={setConfirmFinalizarOpen}>

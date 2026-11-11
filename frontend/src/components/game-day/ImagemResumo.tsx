@@ -65,7 +65,7 @@ export const ImagemResumo = forwardRef<HTMLDivElement, Props>(function ImagemRes
   const lideres = placar.filter((p) => p.vitorias === maxVitorias)
   const campeao = maxVitorias > 0 && lideres.length === 1 ? lideres[0] : null
 
-  // Artilharia/assistencias: top 5, posicoes empatadas dividem o numero
+  // Artilharia/assistencias: todos que pontuaram, posicoes empatadas dividem o numero
   const nomeJogador = (id: number) =>
     times.flatMap((t) => t.jogadores).find((j) => j.id === id)?.nome ?? '—'
   const ranking = (campo: 'gols' | 'assists') => {
@@ -73,7 +73,6 @@ export const ImagemResumo = forwardRef<HTMLDivElement, Props>(function ImagemRes
       .map(([id, s]) => ({ nome: nomeJogador(Number(id)), valor: s[campo] }))
       .filter((r) => r.valor > 0)
       .sort((a, b) => b.valor - a.valor || a.nome.localeCompare(b.nome, 'pt-BR'))
-      .slice(0, 5)
     return ordenado.map((r) => ({
       ...r,
       posicao: ordenado.findIndex((o) => o.valor === r.valor) + 1,
