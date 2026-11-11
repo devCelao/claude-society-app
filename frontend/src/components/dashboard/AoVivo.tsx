@@ -75,19 +75,31 @@ function computeStats(partidas: PartidaData[], times: TimeData[], localGols: Gol
   partidas.filter((p) => p.status === 'FINALIZADA' && p.vencedorId).forEach((p) => {
     victories[p.vencedorId!] = (victories[p.vencedorId!] ?? 0) + 1
   })
-  const allGols = [...partidas.flatMap((p) => p.gols), ...localGols]
-  const byPlayer: Record<number, { nome: string; gols: number; assists: number }> = {}
+  // A partida em andamento e contada so por localGols (estado ao vivo); senao seus gols contam 2x
+  const allGols = [...partidas.filter((p) => p.status !== 'EM_ANDAMENTO').flatMap((p) => p.gols), ...localGols]
+  const byPlayer: Record<number, StatJogadorDia> = {}
   allGols.forEach((g) => {
     if (g.golContra) return // conta no placar, nao na artilharia
-    if (!byPlayer[g.jogadorId]) byPlayer[g.jogadorId] = { nome: g.jogadorNome, gols: 0, assists: 0 }
+    if (!byPlayer[g.jogadorId]) byPlayer[g.jogadorId] = { id: g.jogadorId, nome: g.jogadorNome, gols: 0, assists: 0 }
     byPlayer[g.jogadorId].gols++
     if (g.assistenciaJogadorId) {
       const aid = g.assistenciaJogadorId
-      if (!byPlayer[aid]) byPlayer[aid] = { nome: g.assistenciaJogadorNome!, gols: 0, assists: 0 }
+      if (!byPlayer[aid]) byPlayer[aid] = { id: aid, nome: g.assistenciaJogadorNome!, gols: 0, assists: 0 }
       byPlayer[aid].assists++
     }
   })
   return { victories, jogadores: Object.values(byPlayer).sort((a, b) => b.gols - a.gols || b.assists - a.assists) }
+}
+
+type StatJogadorDia = { id: number; nome: string; gols: number; assists: number }
+
+// Todos que pontuaram na categoria (sem corte); empatados dividem a posicao (1, 1, 3)
+function rankingDoDia(jogadores: StatJogadorDia[], campo: 'gols' | 'assists') {
+  const ordenado = jogadores
+    .filter((j) => j[campo] > 0)
+    .map((j) => ({ id: j.id, nome: j.nome, valor: j[campo] }))
+    .sort((a, b) => b.valor - a.valor || a.nome.localeCompare(b.nome, 'pt-BR'))
+  return ordenado.map((r) => ({ ...r, posicao: ordenado.findIndex((o) => o.valor === r.valor) + 1 }))
 }
 
 // ─── TimeCard ─────────────────────────────────────────────────────────────────
@@ -205,7 +217,7 @@ function GolModal({ open, onClose, teamName, teamCor, teamPlayers, otherPlayers,
 
 function StatsDia({ diaId, partidas, times, victories, jogadores, onAlterado }: {
   diaId: number; partidas: PartidaData[]; times: TimeData[]
-  victories: Record<number, number>; jogadores: { nome: string; gols: number; assists: number }[]
+  victories: Record<number, number>; jogadores: StatJogadorDia[]
   onAlterado: () => void
 }) {
   const finished = partidas.filter((p) => p.status === 'FINALIZADA')
@@ -262,11 +274,11 @@ function StatsDia({ diaId, partidas, times, victories, jogadores, onAlterado }: 
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-xl p-3 space-y-2" style={{ background: '#141414', border: '1px solid #222' }}>
             <div className="font-barlow-condensed text-[10px] tracking-widest uppercase text-muted-foreground mb-1">Artilheiros</div>
-            {jogadores.filter((j) => j.gols > 0).slice(0, 5).map((j, i) => (
-              <div key={i} className="flex items-center gap-1.5 font-barlow-condensed text-xs">
-                <span className="text-muted-foreground w-3">{i + 1}</span>
-                <span className="flex-1 text-foreground truncate">{j.nome}</span>
-                <span style={{ color: '#f5c400', fontWeight: 600 }}>{j.gols}⚽</span>
+            {rankingDoDia(jogadores, 'gols').map((r) => (
+              <div key={r.id} className="flex items-center gap-1.5 font-barlow-condensed text-xs">
+                <span className="text-muted-foreground w-4 tabular-nums">{r.posicao}</span>
+                <span className="flex-1 text-foreground truncate">{r.nome}</span>
+                <span style={{ color: '#f5c400', fontWeight: 600 }}>{r.valor}⚽</span>
               </div>
             ))}
             {jogadores.filter((j) => j.gols > 0).length === 0 && (
@@ -275,11 +287,11 @@ function StatsDia({ diaId, partidas, times, victories, jogadores, onAlterado }: 
           </div>
           <div className="rounded-xl p-3 space-y-2" style={{ background: '#141414', border: '1px solid #222' }}>
             <div className="font-barlow-condensed text-[10px] tracking-widest uppercase text-muted-foreground mb-1">Assistências</div>
-            {jogadores.filter((j) => j.assists > 0).slice(0, 5).map((j, i) => (
-              <div key={i} className="flex items-center gap-1.5 font-barlow-condensed text-xs">
-                <span className="text-muted-foreground w-3">{i + 1}</span>
-                <span className="flex-1 text-foreground truncate">{j.nome}</span>
-                <span style={{ color: '#3b82f6', fontWeight: 600 }}>{j.assists}🎯</span>
+            {rankingDoDia(jogadores, 'assists').map((r) => (
+              <div key={r.id} className="flex items-center gap-1.5 font-barlow-condensed text-xs">
+                <span className="text-muted-foreground w-4 tabular-nums">{r.posicao}</span>
+                <span className="flex-1 text-foreground truncate">{r.nome}</span>
+                <span style={{ color: '#3b82f6', fontWeight: 600 }}>{r.valor}🎯</span>
               </div>
             ))}
             {jogadores.filter((j) => j.assists > 0).length === 0 && (

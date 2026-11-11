@@ -140,7 +140,7 @@ export async function GET(
     // Ordena por valor, depois vitorias, depois empates (todos DESC).
     // Jogadores empatados nos 3 criterios dividem a mesma posicao; a
     // proxima posicao distinta pula os numeros correspondentes
-    // (ex.: 1, 1, 3). Corta em top 10 POSICOES, nao top 10 linhas.
+    // (ex.: 1, 1, 3). Sem corte: lista todos que pontuaram na categoria.
     const montarRanking = (rows: RawGolStat[]): StatJogador[] => {
       const ordenados = rows
         .map((r) => ({
@@ -164,7 +164,6 @@ export async function GET(
           atual.empates === anterior.empates
 
         if (!empatouComAnterior) posicaoAtual = i + 1
-        if (posicaoAtual > 10) break
 
         comPosicao.push({ ...atual, posicao: posicaoAtual })
         anterior = atual
