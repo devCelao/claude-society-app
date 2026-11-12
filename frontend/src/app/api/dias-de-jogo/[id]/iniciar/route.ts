@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { nomeDoCiclo } from '@/lib/validations/ciclo'
 import { recalcularPeriodo } from '@/lib/ciclos/periodo'
+import { hojeNoFuso } from '@/lib/datas'
 
 export async function POST(
   _request: Request,
@@ -23,8 +24,7 @@ export async function POST(
     if (dia.status !== 'PENDENTE') return NextResponse.json({ error: 'Confronto ja iniciado' }, { status: 400 })
     if (dia._count.times < 3) return NextResponse.json({ error: 'Times ainda nao formados' }, { status: 400 })
 
-    const hoje = new Date()
-    hoje.setHours(12, 0, 0, 0)
+    const hoje = hojeNoFuso()
 
     const ciclo = await prisma.$transaction(async (tx) => {
       const aberto = await tx.ciclo.findFirst({ where: { fimEm: null } })

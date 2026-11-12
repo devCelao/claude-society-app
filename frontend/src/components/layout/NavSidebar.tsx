@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { LayoutDashboard, Users, CalendarDays, Trophy, LogOut, UserCog, MapPin } from 'lucide-react'
 import { useSession, signOut } from 'next-auth/react'
+import { FUSO_GRUPO } from '@/lib/datas'
 
 const navItems = [
   { href: '/dashboard',    label: 'Ao Vivo',      icon: LayoutDashboard },
@@ -27,6 +28,45 @@ const configItems = [
     description: 'Cadastrar posições dos jogadores',
   },
 ]
+
+// Data de hoje no fuso do grupo. Calculada so no cliente (useEffect) para evitar
+// divergencia de hidratacao entre servidor (UTC) e navegador.
+function DataHoje({ className }: { className?: string }) {
+  const [texto, setTexto] = useState<{ semana: string; dia: string } | null>(null)
+
+  useEffect(() => {
+    function atualizar() {
+      const agora = new Date()
+      const semana = agora
+        .toLocaleDateString('pt-BR', { timeZone: FUSO_GRUPO, weekday: 'short' })
+        .replace('.', '')
+        .toUpperCase()
+      const dia = agora.toLocaleDateString('pt-BR', {
+        timeZone: FUSO_GRUPO,
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      })
+      setTexto({ semana, dia })
+    }
+    atualizar()
+    const id = setInterval(atualizar, 60_000)
+    return () => clearInterval(id)
+  }, [])
+
+  if (!texto) return null
+
+  return (
+    <div className={`leading-none text-right ${className ?? ''}`}>
+      <div className="font-bebas text-[15px] tracking-widest" style={{ color: '#f5c400' }}>
+        {texto.semana}
+      </div>
+      <div className="font-barlow-condensed text-[11px] tracking-wide mt-0.5" style={{ color: '#888' }}>
+        {texto.dia}
+      </div>
+    </div>
+  )
+}
 
 function SettingsMenu() {
   const [open, setOpen] = useState(false)
@@ -187,6 +227,7 @@ export function NavSidebar({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
+        <DataHoje />
         <SettingsMenu />
       </header>
 
@@ -211,7 +252,10 @@ export function NavSidebar({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </Link>
-        <SettingsMenu />
+        <div className="flex items-center gap-3">
+          <DataHoje />
+          <SettingsMenu />
+        </div>
       </header>
 
       {/* Content */}
