@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import type { Prisma } from '@/generated/prisma/client'
 import { AjusteCicloSchema, type AjusteCicloData } from '@/lib/validations/ciclo'
 import { recalcularPeriodo } from '@/lib/ciclos/periodo'
+import { hojeNoFuso } from '@/lib/datas'
 
 // Ajuste de ciclo (regras em docs/arquitetura/arquitetura-database.md — "Ajuste de ciclos"):
 // renomeia, move confrontos escolhidos para outro ciclo (existente ou criado agora, que nasce
@@ -61,7 +62,7 @@ async function ajustar(tx: Prisma.TransactionClient, d: AjusteCicloData): Promis
 
     if (d.mover.novoCicloNome) {
       const primeiraData = dias.map((dia) => dia.data).filter((x): x is Date => !!x).sort((a, b) => +a - +b)[0]
-      const inicio = primeiraData ?? new Date()
+      const inicio = primeiraData ?? hojeNoFuso()
       const criado = await tx.ciclo.create({
         data: { nome: d.mover.novoCicloNome, inicioEm: inicio, fimEm: inicio },
       })
